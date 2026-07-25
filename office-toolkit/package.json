@@ -4,6 +4,7 @@
   "private": true,
   "description": "办公工具箱 - 纯前端 PDF & 图片处理工具站",
   "scripts": {
+    "predev": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch(e){}\"",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
