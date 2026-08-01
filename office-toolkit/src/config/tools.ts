@@ -41,6 +41,15 @@ export const tools: ToolMeta[] = [
     featured: true,
   },
   {
+    id: "image-parameter-crop",
+    name: "图片参数化裁剪",
+    description: "通过拖动裁剪框或输入左上/右下坐标，精确指定裁剪区域",
+    category: "image",
+    path: "/tools/image/parameter-crop/",
+    icon: "Crosshair",
+    tags: ["参数化裁剪", "坐标裁剪", "精确裁剪", "图片"],
+  },
+  {
     id: "image-pad",
     name: "图片扩展填充",
     description: "在原图四周扩展画布，支持按 4 边像素或画布尺寸 + 中心偏移两种模式",

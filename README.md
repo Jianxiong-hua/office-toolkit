@@ -1,4 +1,4 @@
-# 小蓝盒免费在线办公工具箱 / Sky-Box Office Toolkit
+# 浩匣免费在线办公工具箱 / HaoXia Office Toolkit
 
 纯前端 Web 办公工具站，所有文件处理均在浏览器本地完成，无需上传到服务器，保护隐私安全。
 
@@ -15,15 +15,15 @@
 - **图片压缩** - 在线压缩 PNG/JPG/WebP 图片，支持批量处理和自定义压缩质量
 - **格式转换** - 图片格式互转，支持 JPG ↔ PNG ↔ WebP ↔ BMP
 - **图片缩放** - 按像素或百分比缩放图片，支持锁定宽高比和批量处理
-- **图片裁剪** - 自由裁剪图片，支持固定比例（1:1、4:3、16:9）、旋转、翻转
+- **图片裁剪** - 支持 5 种固定比例（1:1、4:3、16:9、3:4、9:16）裁剪，支持旋转和翻转
+- **参数化裁剪** - 固定高度预览区 + 暗色 letterbox，拖动裁剪框或输入左上/右下坐标精确裁剪
 - **背景填充** - 将图片等比居中或拉伸填充到目标画布尺寸，支持自定义背景色和证件照尺寸预设
-- **修改 DPI** - 按目标 DPI 等效调整图片像素尺寸，适用于打印场景
 
 ### 核心优势
 
 - 🔒 **隐私安全** - 所有文件处理在浏览器本地完成，文件不会上传到任何服务器
 - 🚀 **无需注册** - 打开即用，无需登录或注册
-- 💻 **纯前端** - 零服务器成本，可部署到 Vercel / Cloudflare Pages
+- 💻 **纯前端** - 零服务器成本，可部署到 Cloudflare Pages / Vercel / 任何静态主机
 - 📱 **响应式设计** - 支持桌面和移动设备访问
 
 ## 🛠️ 技术栈
@@ -94,9 +94,9 @@ office-toolkit/
 │   │           ├── compress/   # 图片压缩
 │   │           ├── convert/    # 格式转换
 │   │           ├── resize/     # 图片缩放
-│   │           ├── crop/       # 图片裁剪
-│   │           ├── pad/        # 背景填充
-│   │           └── dpi/        # 修改 DPI
+│   │           ├── crop/       # 快速裁剪
+│   │           ├── parameter-crop/ # 参数化裁剪
+│   │           └── pad/        # 背景填充
 │   ├── components/             # 通用组件
 │   │   ├── layout/             # 布局组件
 │   │   ├── tools/              # 工具组件
@@ -111,13 +111,17 @@ office-toolkit/
 └── package.json
 ```
 
-## 🌐 部署
+## 🚀 部署
 
-### Vercel 部署（推荐）
+### Cloudflare Pages 部署（推荐）
 
 1. 将项目推送到 GitHub
-2. 在 [Vercel](https://vercel.com) 导入项目
-3. 自动部署，获得自定义域名
+2. 在 [Cloudflare Dashboard](https://dash.cloudflare.com/?to=/:account/pages) 创建 Pages 项目，连接 GitHub 仓库
+3. 配置构建设置：
+   - **Root directory**: `office-toolkit`
+   - **Build command**: `npm run build`
+   - **Build output directory**: `out`
+4. 保存后每次推送到 `main` 分支会自动部署
 
 ### 静态部署
 
@@ -130,7 +134,6 @@ npm run build
 ## 📋 已知限制
 
 - **中文水印暂不支持** - PDF 文字水印使用 Helvetica 字体，中文会显示为方块
-- **DPI 仅做像素等效调整** - Web 无法写入 EXIF DPI，仅按像素尺寸等效调整
 - **大文件限制** - 单文件 ≤ 50MB，避免浏览器内存不足
 - **BMP 输出依赖浏览器支持** - 部分浏览器可能不支持 BMP 格式输出
 
@@ -144,4 +147,10 @@ MIT License
 
 ## 📧 联系方式
 
-如有问题或建议，请通过 GitHub Issues 反馈。
+如有问题或建议，欢迎通过以下方式反馈：
+
+- 📮 邮箱：`hjx0827@foxmail.com`
+- 🐙 GitHub Issues：欢迎提交 Issue
+- 🌐 在线访问：[office-toolkit-9sv.pages.dev](https://office-toolkit-9sv.pages.dev)
+
+更多功能介绍和最新动态请访问站点。关于我们请见站内的"关于"页面。

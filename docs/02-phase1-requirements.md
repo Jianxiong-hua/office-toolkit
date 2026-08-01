@@ -1,4 +1,4 @@
-# 小蓝盒 Phase 1 需求文档
+# 浩匣 Phase 1 需求文档
 
 > 第一阶段目标：零服务器、纯前端，完成基础 PDF 和图片工具，让自己和周围的人能顺手用起来。
 
@@ -7,9 +7,9 @@
 ## 1. 目标与范围
 
 ### 1.1 目标
-- 完成 8 个核心工具的开发和上线；
+- 完成 9 个核心工具的开发和上线；
 - 建立统一的文件上传、处理、下载、错误提示体验；
-- 部署到 Vercel，支持自己和朋友的日常使用；
+- 部署到 Cloudflare Pages，支持自己和朋友的日常使用；
 - 为后续阶段打好基础（组件复用、SEO 结构、埋点事件）。
 
 ### 1.2 范围边界
@@ -364,6 +364,51 @@ drawY = clamp(baseY + dy, 0, canvasHeight - originalHeight)
 
 ---
 
+### 3.9 图片参数化裁剪 / Parameter Crop
+
+参数化裁剪与"快速裁剪"的区别：快速裁剪是固定比例的 UI 拖动裁剪（适合社交媒体头像、封面等场景）；参数化裁剪是通过**精确坐标**或**自由拖动**指定任意位置的矩形区域（适合批量处理、自动化脚本、像素级精确提取）。
+
+#### 功能需求
+- 支持上传单张图片（PNG、JPG、JPEG、WebP、BMP、GIF）；
+- 预览区域为**固定高度 320px**、全宽的容器，图片用 `object-fit: contain` 等比居中显示，容器背景为暗色（深灰 `#111827`）模拟 letterbox；
+- **两种裁剪方式**（任选其一或结合使用）：
+  1. **拖动裁剪框**：在预览区直接用鼠标 / 触屏拖动裁剪框平移，实时联动坐标输入框；
+  2. **输入坐标**：表单输入左上 (x1, y1) 和右下 (x2, y2) 四个原图像素坐标，精确控制裁剪区域；
+- 显示原始图像信息条：原始分辨率（`naturalWidth × naturalHeight`）、当前裁剪区域尺寸、文件大小；
+- 上传图片后默认裁剪框为**中央 80% 区域**（四周各留 10% 边距）；
+- 拖动裁剪框时自动 clamp 到原图边界内，不会拖出图片；
+- 坐标输入支持非负整数，越界值在 `handleProcess` 时由 `cropImageByRegion` 校验；
+- 已选文件可通过"重新选择"按钮（灰底样式：`bg-gray-100` + `text-gray-600`）一键清空当前选择；
+- 裁剪完成后提供"预览"按钮（眼睛图标），点击在新窗口打开裁剪结果；
+- 下载裁剪结果，文件名：`原文件名_cropped.扩展名`；
+- 支持输出格式：保持原格式 / JPEG / PNG / WebP；JPEG 和 WebP 时显示质量滑块（10-100，默认 92）；
+- **不支持**旋转、翻转（这两个特性由"快速裁剪"工具承担，避免功能重复）；
+- 限制单文件 ≤ 20MB。
+
+#### 软件需求
+- **预览区域布局**：
+  - 容器：`<div className="relative w-full overflow-hidden rounded-xl bg-gray-900" style={{ height: '320px' }}>`；
+  - 图片：`<img className="absolute inset-0 h-full w-full object-contain" />`（关键：用 `object-contain` 让图片在容器内等比居中，超出部分留暗色 letterbox）；
+  - 裁剪框：`<div className="absolute cursor-move border-2 border-brand-500 bg-brand-500/20" />`，位置由 `displayInfo.offsetX/Y` + `rect × displayInfo.scale` 算出。
+- **`calcDisplayInfo` 函数**（实现 CSS `object-fit: contain` 的核心算法）：
+  ```
+  scale     = min(containerW / imageW, containerH / imageH)
+  displayW  = imageW  * scale
+  displayH  = imageH  * scale
+  offsetX   = (containerW  - displayW) / 2
+  offsetY   = (containerH - displayH) / 2
+  ```
+  裁剪框在容器中的坐标 = `offsetX + 原图坐标 × scale`；
+- **尺寸变化监听**：用 `ResizeObserver` 监听容器尺寸变化 + `window.resize` 事件，任何一边变化就重算 `displayInfo`，裁剪框位置始终对齐图片实际显示位置（不依赖图片 `onLoad` 单次触发）；
+- **拖动实现**：用 `pointerdown / pointermove / pointerup` 事件（同时支持鼠标和触屏），移动时根据 `dx / dy` 在原图坐标系下平移裁剪框，并 clamp 到 `[0, naturalW - cropW]` / `[0, naturalH - cropH]` 范围；
+- **裁剪核心**：调用 `cropImageByRegion(file, { x, y, width, height, format, quality })`（已在 `src/lib/image/crop.ts` 实现），从原图直接 1:1 提取目标区域，不缩放不变形；
+- **边界校验**：`cropImageByRegion` 内部检查 `x >= 0 && y >= 0 && x + width <= naturalWidth && y + height <= naturalHeight`，越界抛出 `INVALID_INPUT` 错误并附图片尺寸提示；
+- **不缩放原则**：与"快速裁剪"不同，参数化裁剪不做任何缩放变换，输入坐标即输出坐标，`cropImageByRegion` 不接受 `rotation / flipX / flipY` 参数；
+- 复用 `lib/file` 中的 `readFileAsDataURL`、`downloadBlob`、`generateOutputFilename`、`formatFileSize`；
+- 复用 `components/common/ErrorAlert` 统一错误展示，复用 `components/common/ProcessProgress` 显示处理中状态。
+
+---
+
 ## 4. 非功能需求
 
 | 类别 | 需求 |
@@ -373,8 +418,8 @@ drawY = clamp(baseY + dy, 0, canvasHeight - originalHeight)
 | 安全 | 不收集用户文件；不上传文件到服务器；分析脚本不读取文件内容 |
 | 可访问性 | 按钮有明确 label；颜色对比度符合 WCAG 2.1 AA；支持键盘操作 |
 | SEO | 每个页面独立 meta；生成 sitemap；添加 JSON-LD |
-| 部署 | 静态导出到 `out/`；部署到 Vercel；配置自定义域名（可选） |
-| 反馈 | 每个工具页底部有反馈入口；首页有"关于我们"和"隐私政策"链接 |
+| 部署 | 静态导出到 `out/`；部署到 Cloudflare Pages；配置自定义域名（可选） |
+| 反馈 | 每个工具页底部有反馈入口；首页有"关于我们"链接（`/about#contact`），联系邮箱 `hjx0827@foxmail.com` |
 
 ---
 
