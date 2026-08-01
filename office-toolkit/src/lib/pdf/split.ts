@@ -144,7 +144,8 @@ export async function extractPDFPagesAsPng(
   // 动态导入避免 SSR 问题
   const pdfjsLib = await import("pdfjs-dist");
   // 禁用 worker：在主线程渲染（单文件处理，worker 收益不大）
-  pdfjsLib.GlobalWorkerOptions.workerSrc = false;
+  // pdfjs-dist 要求 workerSrc 是 string 类型，赋空字符串即可禁用 worker
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "";
 
   const data = new Uint8Array(buffer);
   const loadingTask = pdfjsLib.getDocument({ data });
