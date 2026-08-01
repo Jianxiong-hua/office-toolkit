@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Download } from "lucide-react";
+import { Download, RotateCcw } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { FileList, type FileResult } from "@/components/tools/FileList";
@@ -13,9 +13,18 @@ import {
   downloadBlob,
   formatFileSize,
   generateOutputFilename,
+  loadImage,
   readFileAsDataURL,
 } from "@/lib/file";
 import { AppError, type AppErrorCode, type FileItem } from "@/types";
+
+/** 基准尺寸：来自第一张图片，用于"锁定宽高比"时自动计算 */
+function getBaseDimension(
+  dims: Map<string, { width: number; height: number }>
+): { width: number; height: number } | null {
+  const first = dims.values().next().value;
+  return first ?? null;
+}
 
 export default function ImageResizePage() {
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -23,13 +32,77 @@ export default function ImageResizePage() {
   const [height, setHeight] = useState<string>("");
   const [percent, setPercent] = useState<string>("");
   const [keepRatio, setKeepRatio] = useState(true);
-  const [mode, setMode] = useState<ResizeOptions["mode"]>("fit");
   const [format, setFormat] = useState<ResizeOptions["format"]>("original");
   const [quality, setQuality] = useState(92);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<Map<string, FileResult>>(new Map());
+  const [originalDimensions, setOriginalDimensions] = useState<
+    Map<string, { width: number; height: number }>
+  >(new Map());
   const [error, setError] = useState<{ code?: AppErrorCode; message: string } | null>(null);
+
+  /**
+   * 修改宽度。
+   * 锁定宽高比时，根据基准图自动计算 height / percent。
+   */
+  const handleWidthChange = useCallback(
+    (value: string) => {
+      setWidth(value);
+      if (!keepRatio) return;
+      const base = getBaseDimension(originalDimensions);
+      if (!base) return;
+      const w = Number(value);
+      if (!isNaN(w) && w > 0) {
+        const ratio = w / base.width;
+        const newH = Math.round(base.height * ratio);
+        setHeight(String(newH));
+        setPercent(String(Math.round(ratio * 100)));
+      }
+    },
+    [keepRatio, originalDimensions]
+  );
+
+  /**
+   * 修改高度。
+   * 锁定宽高比时，根据基准图自动计算 width / percent。
+   */
+  const handleHeightChange = useCallback(
+    (value: string) => {
+      setHeight(value);
+      if (!keepRatio) return;
+      const base = getBaseDimension(originalDimensions);
+      if (!base) return;
+      const h = Number(value);
+      if (!isNaN(h) && h > 0) {
+        const ratio = h / base.height;
+        const newW = Math.round(base.width * ratio);
+        setWidth(String(newW));
+        setPercent(String(Math.round(ratio * 100)));
+      }
+    },
+    [keepRatio, originalDimensions]
+  );
+
+  /**
+   * 修改百分比。
+   * 锁定宽高比时，根据基准图自动计算 width / height。
+   */
+  const handlePercentChange = useCallback(
+    (value: string) => {
+      setPercent(value);
+      if (!keepRatio) return;
+      const base = getBaseDimension(originalDimensions);
+      if (!base) return;
+      const p = Number(value);
+      if (!isNaN(p) && p > 0) {
+        const ratio = p / 100;
+        setWidth(String(Math.round(base.width * ratio)));
+        setHeight(String(Math.round(base.height * ratio)));
+      }
+    },
+    [keepRatio, originalDimensions]
+  );
 
   const handleFilesAdded = useCallback(async (newFiles: FileItem[]) => {
     const withPreviews = await Promise.all(
@@ -41,6 +114,27 @@ export default function ImageResizePage() {
       })
     );
     setFiles((prev) => [...prev, ...withPreviews]);
+
+    // 读取每张图片的原始尺寸
+    const dimEntries = await Promise.all(
+      withPreviews.map(async (f) => {
+        if (!f.preview) return null;
+        try {
+          const img = await loadImage(f.preview);
+          return [f.id, { width: img.naturalWidth, height: img.naturalHeight }] as const;
+        } catch {
+          return null;
+        }
+      })
+    );
+    setOriginalDimensions((prev) => {
+      const next = new Map(prev);
+      dimEntries.forEach((entry) => {
+        if (entry) next.set(entry[0], entry[1]);
+      });
+      return next;
+    });
+
     setResults(new Map());
     setError(null);
   }, []);
@@ -52,10 +146,37 @@ export default function ImageResizePage() {
       next.delete(id);
       return next;
     });
+    setOriginalDimensions((prev) => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const handleReselect = useCallback(() => {
+    setFiles([]);
+    setResults(new Map());
+    setOriginalDimensions(new Map());
+    setError(null);
   }, []);
 
   const handleResize = useCallback(async () => {
     if (files.length === 0) return;
+
+    // 锁定宽高比：width/height/percent 任一即可
+    // 不锁定：必须同时填入 width 和 height
+    if (keepRatio) {
+      if (!width && !height && !percent) return;
+    } else {
+      if (!width || !height) {
+        setError({
+          code: "INVALID_INPUT",
+          message: "未锁定宽高比时，必须同时填入宽度和高度",
+        });
+        return;
+      }
+    }
+
     setProcessing(true);
     setProgress(0);
     setError(null);
@@ -64,9 +185,8 @@ export default function ImageResizePage() {
     const options: ResizeOptions = {
       width: width ? Number(width) : undefined,
       height: height ? Number(height) : undefined,
-      percent: percent ? Number(percent) : undefined,
+      percent: keepRatio && percent ? Number(percent) : undefined,
       keepRatio,
-      mode,
       format,
       quality: quality / 100,
     };
@@ -93,7 +213,7 @@ export default function ImageResizePage() {
     } finally {
       setProcessing(false);
     }
-  }, [files, width, height, percent, keepRatio, mode, format, quality]);
+  }, [files, width, height, percent, keepRatio, format, quality]);
 
   const handleDownload = useCallback(
     (id: string) => {
@@ -105,6 +225,22 @@ export default function ImageResizePage() {
       downloadBlob(result.blob, name);
     },
     [results, files, format]
+  );
+
+  const handlePreview = useCallback(
+    (id: string) => {
+      const result = results.get(id);
+      const file = files.find((f) => f.id === id);
+      if (!result || !file) return;
+      const url = URL.createObjectURL(result.blob);
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/><title>${file.name}</title><style>html,body{margin:0;height:100%}body{background:#f3f4f6;display:flex;align-items:center;justify-content:center}img{max-width:96%;max-height:96vh;box-shadow:0 4px 24px rgba(0,0,0,.15);background:white}</style></head><body><img src="${url}"/></body></html>`);
+        w.document.close();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    },
+    [results, files]
   );
 
   const handleDownloadAll = useCallback(async () => {
@@ -155,11 +291,33 @@ export default function ImageResizePage() {
           showPreview
           results={results}
           onDownload={handleDownload}
+          onPreview={handlePreview}
         />
 
         {files.length > 0 && (
           <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
-            <h3 className="font-semibold text-gray-900">缩放选项</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">缩放选项</h3>
+              <button
+                onClick={handleReselect}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                重新选择
+              </button>
+            </div>
+
+            {originalDimensions.size > 0 && (
+              <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                <span className="font-medium text-gray-700">原图分辨率：</span>
+                {Array.from(originalDimensions.values()).map((dim, idx, arr) => (
+                  <span key={idx}>
+                    {dim.width} × {dim.height}
+                    {idx < arr.length - 1 ? "、" : ""}
+                  </span>
+                ))}
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
@@ -170,7 +328,7 @@ export default function ImageResizePage() {
                   type="number"
                   min={1}
                   value={width}
-                  onChange={(e) => setWidth(e.target.value)}
+                  onChange={(e) => handleWidthChange(e.target.value)}
                   placeholder="自动"
                   className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
                 />
@@ -183,7 +341,7 @@ export default function ImageResizePage() {
                   type="number"
                   min={1}
                   value={height}
-                  onChange={(e) => setHeight(e.target.value)}
+                  onChange={(e) => handleHeightChange(e.target.value)}
                   placeholder="自动"
                   className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
                 />
@@ -197,9 +355,10 @@ export default function ImageResizePage() {
                   min={1}
                   max={1000}
                   value={percent}
-                  onChange={(e) => setPercent(e.target.value)}
+                  onChange={(e) => handlePercentChange(e.target.value)}
                   placeholder="如 50"
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                  disabled={!keepRatio}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                 />
               </div>
             </div>
@@ -237,34 +396,25 @@ export default function ImageResizePage() {
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-4">
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={keepRatio}
-                  onChange={(e) => setKeepRatio(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                />
-                锁定宽高比
-              </label>
-              {!keepRatio && (
-                <select
-                  value={mode}
-                  onChange={(e) => setMode(e.target.value as ResizeOptions["mode"])}
-                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm"
-                >
-                  <option value="fit">适配</option>
-                  <option value="stretch">拉伸</option>
-                  <option value="cover">覆盖</option>
-                </select>
-              )}
-            </div>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={keepRatio}
+                onChange={(e) => setKeepRatio(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+              />
+              锁定宽高比
+            </label>
 
             <div className="flex flex-wrap items-center gap-3">
               <DownloadButton
                 onClick={handleResize}
                 loading={processing}
-                disabled={!width && !height && !percent}
+                disabled={
+                  keepRatio
+                    ? !width && !height && !percent
+                    : !width || !height
+                }
                 label="开始缩放"
               />
               {results.size > 0 && (

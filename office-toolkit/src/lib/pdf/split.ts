@@ -131,3 +131,51 @@ export async function extractPDFPages(
   }));
   return splitPDFByRanges(buffer, ranges);
 }
+
+/**
+ * 把 PDF 每一页渲染为 PNG 图片
+ * 使用 pdfjs-dist 在浏览器中渲染
+ * 禁用 Worker 避免 Next.js 静态导出/开发环境下的 worker 路径问题
+ */
+export async function extractPDFPagesAsPng(
+  buffer: ArrayBuffer,
+  scale: number = 2
+): Promise<{ bytes: Uint8Array; range: SplitRange }[]> {
+  // 动态导入避免 SSR 问题
+  const pdfjsLib = await import("pdfjs-dist");
+  // 禁用 worker：在主线程渲染（单文件处理，worker 收益不大）
+  pdfjsLib.GlobalWorkerOptions.workerSrc = false;
+
+  const data = new Uint8Array(buffer);
+  const loadingTask = pdfjsLib.getDocument({ data });
+  const pdf = await loadingTask.promise;
+  const totalPages = pdf.numPages;
+  const results: { bytes: Uint8Array; range: SplitRange }[] = [];
+
+  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext("2d")!;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error("canvas.toBlob failed"));
+      }, "image/png");
+    });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+
+    results.push({
+      bytes,
+      range: { start: pageNum, end: pageNum },
+    });
+  }
+
+  // pdfjs-dist 没有 destroy 方法，仅清空引用让 GC 回收
+  return results;
+}

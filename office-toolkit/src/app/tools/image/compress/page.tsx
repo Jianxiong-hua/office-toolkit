@@ -82,6 +82,36 @@ export default function ImageCompressPage() {
     [results, files, options.format]
   );
 
+  const handlePreview = useCallback(
+    (id: string) => {
+      const result = results.get(id);
+      const fileItem = files.find((f) => f.id === id);
+      if (!result || !fileItem) return;
+      const url = URL.createObjectURL(result.blob);
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(`
+          <!doctype html>
+          <html lang="zh-CN">
+            <head>
+              <meta charset="utf-8" />
+              <title>${fileItem.name}</title>
+              <style>
+                html,body{margin:0;height:100%}
+                body{background:#f3f4f6;display:flex;align-items:center;justify-content:center}
+                img{max-width:96%;max-height:96vh;box-shadow:0 4px 24px rgba(0,0,0,.15);background:white}
+              </style>
+            </head>
+            <body><img src="${url}"/></body>
+          </html>
+        `);
+        w.document.close();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    },
+    [results, files]
+  );
+
   const handleDownloadAll = useCallback(async () => {
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
@@ -130,6 +160,7 @@ export default function ImageCompressPage() {
           showPreview
           results={results}
           onDownload={handleDownload}
+          onPreview={handlePreview}
         />
 
         {/* 压缩选项 */}

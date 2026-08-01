@@ -18,6 +18,11 @@ export interface TextWatermarkOptions {
   opacity: number; // 0-1
   rotation: number; // degrees
   position: WatermarkPosition;
+  /**
+   * 平铺间距系数（仅 position === "tile" 时生效）
+   * 0.5 = 行间距小（密集），1.1 = 行间距大（稀疏）
+   */
+  tileSpacing?: number;
 }
 
 export interface ImageWatermarkOptions {
@@ -27,6 +32,11 @@ export interface ImageWatermarkOptions {
   opacity: number; // 0-1
   rotation: number; // degrees
   position: WatermarkPosition;
+  /**
+   * 平铺间距系数（仅 position === "tile" 时生效）
+   * 0.5 = 行间距小（密集），1.1 = 行间距大（稀疏）
+   */
+  tileSpacing?: number;
 }
 
 export type WatermarkOptions = TextWatermarkOptions | ImageWatermarkOptions;
@@ -44,7 +54,9 @@ function getPosition(
   page: PDFPage,
   contentWidth: number,
   contentHeight: number,
-  position: WatermarkPosition
+  position: WatermarkPosition,
+  rotation: number = 0,
+  spacingRatio: number = 1.1
 ): { x: number; y: number }[] {
   const { width: pageWidth, height: pageHeight } = page.getSize();
   const marginX = 40;
@@ -67,11 +79,27 @@ function getPosition(
     case "bottomright":
       return [{ x: pageWidth - contentWidth - marginX, y: marginY }];
     case "tile": {
+      // 多行平铺：根据 spacingRatio 调节行间距
+      //   spacingRatio = 1.0 → 刚好接边，最密集，文字互不重叠
+      //   spacingRatio = 1.1 → 10% 间隙（默认）
+      //   spacingRatio = 1.5 → 50% 间隙，最稀疏
+      // 因为 effectiveW 已经是旋转后水印在水平方向的最大跨度，
+      // 任何 spacingRatio < 1.0 都会导致相邻水印的文字相互覆盖
+      // 旋转 θ 角后，水印在水平/垂直方向上的最大跨度是
+      //   W' = W·cosθ + H·sinθ
+      //   H' = W·sinθ + H·cosθ
+      const angleRad = (Math.abs(rotation) * Math.PI) / 180;
+      const cosA = Math.cos(angleRad);
+      const sinA = Math.sin(angleRad);
+      const effectiveW = contentWidth * cosA + contentHeight * sinA;
+      const effectiveH = contentWidth * sinA + contentHeight * cosA;
+
+      const spacingX = effectiveW * spacingRatio;
+      const spacingY = effectiveH * spacingRatio;
+
       const positions: { x: number; y: number }[] = [];
-      const spacingX = contentWidth + 80;
-      const spacingY = contentHeight + 80;
-      for (let x = marginX; x + contentWidth < pageWidth; x += spacingX) {
-        for (let y = marginY; y + contentHeight < pageHeight; y += spacingY) {
+      for (let y = 0; y <= pageHeight; y += spacingY) {
+        for (let x = 0; x <= pageWidth; x += spacingX) {
           positions.push({ x, y });
         }
       }
@@ -107,7 +135,14 @@ export async function addWatermark(
     for (const page of pages) {
       const textWidth = font.widthOfTextAtSize(options.text, options.fontSize);
       const textHeight = options.fontSize;
-      const positions = getPosition(page, textWidth, textHeight, options.position);
+      const positions = getPosition(
+        page,
+        textWidth,
+        textHeight,
+        options.position,
+        options.rotation,
+        options.tileSpacing ?? 1.1
+      );
 
       for (const { x, y } of positions) {
         page.drawText(options.text, {
@@ -140,7 +175,14 @@ export async function addWatermark(
     const height = width / aspectRatio;
 
     for (const page of pages) {
-      const positions = getPosition(page, width, height, options.position);
+      const positions = getPosition(
+        page,
+        width,
+        height,
+        options.position,
+        options.rotation,
+        options.tileSpacing ?? 1.1
+      );
       for (const { x, y } of positions) {
         page.drawImage(pdfImage, {
           x,

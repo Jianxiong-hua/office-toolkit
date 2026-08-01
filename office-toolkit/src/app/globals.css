@@ -22,6 +22,11 @@
     scroll-behavior: smooth;
   }
 
+  /* 锚点跳转时给 sticky header 留出空间（header 高 64px = 4rem） */
+  [id] {
+    scroll-margin-top: 4rem;
+  }
+
   body {
     @apply bg-white text-gray-900 antialiased;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;

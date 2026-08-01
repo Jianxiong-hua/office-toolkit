@@ -60,6 +60,14 @@ export default function PdfMergePage() {
 
   const handleMerge = useCallback(async () => {
     if (files.length < 1) return;
+    
+    // 校验批量总大小（避免合并后文档过大导致浏览器崩溃）
+    const total = files.reduce((sum, f) => sum + f.size, 0);
+    if (total > 500 * 1024 * 1024) {
+      setError(`批量总大小 ${formatFileSize(total)} 超过 500MB 限制，请减少文件或分批合并`);
+      return;
+    }
+    
     setProcessing(true);
     setError(null);
 
@@ -112,7 +120,7 @@ export default function PdfMergePage() {
           }}
           onFilesAdded={handleFilesAdded}
           label="拖拽 PDF 或图片文件到此处，或点击选择"
-          maxSize={100 * 1024 * 1024}
+          maxSize={50 * 1024 * 1024}
         />
 
         {/* 文件排序列表 */}
@@ -219,7 +227,7 @@ export default function PdfMergePage() {
             <ul className="text-sm text-gray-500 space-y-1.5">
               <li>• 支持合并多个 PDF 和图片文件（PNG、JPG、WebP）</li>
               <li>• 图片会自动转换为单页 PDF</li>
-              <li>• 单个文件最大 100MB</li>
+              <li>• 单个文件最大 50MB，批量总大小不超过 500MB</li>
               <li>• 通过箭头按钮调整文件合并顺序</li>
               <li>• 所有处理在浏览器本地完成，文件不会上传到服务器</li>
             </ul>

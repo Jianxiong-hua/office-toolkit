@@ -8,9 +8,11 @@ export function Footer() {
       <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <div className="grid gap-8 sm:grid-cols-3">
           <div>
-            <h3 className="font-semibold text-gray-900 mb-3">{siteConfig.name}</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">
+              {siteConfig.name} <span className="text-gray-400 font-normal">/ {siteConfig.shortName}</span>
+            </h3>
             <p className="text-sm text-gray-500 leading-relaxed">
-              免费在线办公工具箱，所有文件处理均在浏览器本地完成，保护您的隐私安全。
+              {siteConfig.description}
             </p>
           </div>
           <div>
@@ -35,8 +37,13 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="#" className="text-gray-500 hover:text-brand-600 transition-colors">
+                <Link href="/about" className="text-gray-500 hover:text-brand-600 transition-colors">
                   关于我们
+                </Link>
+              </li>
+              <li>
+                <Link href="/about#contact" className="text-gray-500 hover:text-brand-600 transition-colors">
+                  联系我们
                 </Link>
               </li>
             </ul>

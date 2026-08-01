@@ -1,12 +1,13 @@
 export const siteConfig = {
-  name: "OfficeToolkit",
-  title: "OfficeToolkit - 免费在线办公工具箱",
+  name: "浩匣",
+  shortName: "HaoXia",
+  title: "浩匣免费在线办公工具箱 - HaoXia Office Toolkit",
   description:
-    "免费在线 PDF 处理、图片处理工具集。所有处理均在浏览器本地完成，无需上传文件到服务器，保护您的隐私安全。",
-  url: "https://officetoolkit.pro",
-  ogImage: "https://officetoolkit.pro/og-image.png",
+    "浩匣 (HaoXia) 免费在线 PDF 处理、图片处理工具集。所有处理均在浏览器本地完成，无需上传文件到服务器，保护您的隐私安全。",
+  url: "https://office-toolkit-9sv.pages.dev",
+  ogImage: "https://office-toolkit-9sv.pages.dev/og-image.png",
   links: {
-    github: "https://github.com/officetoolkit",
+    github: "https://github.com/haoxia",
   },
 };
 

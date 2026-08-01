@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Download, FileText, Type, Image as ImageIcon } from "lucide-react";
+import { Download, FileText, Type, Image as ImageIcon, Eye } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
@@ -20,8 +20,16 @@ const positions: { value: WatermarkPosition; label: string }[] = [
   { value: "topright", label: "右上" },
   { value: "bottomleft", label: "左下" },
   { value: "bottomright", label: "右下" },
-  { value: "tile", label: "平铺" },
+  { value: "tile", label: "多行平铺" },
 ];
+
+// 平铺间距系数：保证文字永远不重叠
+// 下限 1.0 = 刚好接边（最密集，每个水印独立）
+// 上限 1.5 = 50% 间隙（稀疏）
+// 默认 1.1 = 10% 间隙
+const TILE_SPACING_MIN = 1.0;
+const TILE_SPACING_MAX = 1.5;
+const TILE_SPACING_DEFAULT = 1.1;
 
 export default function PdfWatermarkPage() {
   const [file, setFile] = useState<FileItem | null>(null);
@@ -32,6 +40,7 @@ export default function PdfWatermarkPage() {
   const [opacity, setOpacity] = useState(0.3);
   const [rotation, setRotation] = useState(45);
   const [position, setPosition] = useState<WatermarkPosition>("center");
+  const [tileSpacing, setTileSpacing] = useState(TILE_SPACING_DEFAULT);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageWidth, setImageWidth] = useState(150);
   const [processing, setProcessing] = useState(false);
@@ -76,6 +85,7 @@ export default function PdfWatermarkPage() {
               opacity,
               rotation,
               position,
+              tileSpacing,
             }
           : {
               type: "image" as const,
@@ -84,6 +94,7 @@ export default function PdfWatermarkPage() {
               opacity,
               rotation,
               position,
+              tileSpacing,
             };
 
       if (type === "image" && !imageFile) {
@@ -104,13 +115,20 @@ export default function PdfWatermarkPage() {
     } finally {
       setProcessing(false);
     }
-  }, [file, type, text, fontSize, color, opacity, rotation, position, imageFile, imageWidth]);
+  }, [file, type, text, fontSize, color, opacity, rotation, position, imageFile, imageWidth, tileSpacing]);
 
   const handleDownload = useCallback(() => {
     if (!resultBlob || !file) return;
     const name = file.name.replace(/\.pdf$/i, "_watermarked.pdf");
     downloadBlob(resultBlob, name);
   }, [resultBlob, file]);
+
+  const handlePreview = useCallback(() => {
+    if (!resultBlob) return;
+    const url = URL.createObjectURL(resultBlob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }, [resultBlob]);
 
   return (
     <ToolLayout
@@ -121,7 +139,7 @@ export default function PdfWatermarkPage() {
         <FileDropZone
           accept={{ "application/pdf": [".pdf"] }}
           maxFiles={1}
-          maxSize={50 * 1024 * 1024}
+          maxSize={100 * 1024 * 1024}
           onFilesAdded={handlePdfAdded}
           label="拖拽 PDF 文件到此处，或点击选择"
         />
@@ -145,7 +163,7 @@ export default function PdfWatermarkPage() {
               </div>
               <button
                 onClick={handleRemove}
-                className="text-xs text-red-500 hover:underline"
+                className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
               >
                 重新选择
               </button>
@@ -306,6 +324,27 @@ export default function PdfWatermarkPage() {
               </div>
             </div>
 
+            {position === "tile" && (
+              <div>
+                <div className="mb-1.5 flex items-center justify-between text-sm font-medium text-gray-700">
+                  <span>行间距</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="shrink-0 text-xs text-gray-500">行间距小</span>
+                  <input
+                    type="range"
+                    min={TILE_SPACING_MIN}
+                    max={TILE_SPACING_MAX}
+                    step={0.05}
+                    value={tileSpacing}
+                    onChange={(e) => setTileSpacing(Number(e.target.value))}
+                    className="w-full accent-brand-600"
+                  />
+                  <span className="shrink-0 text-xs text-gray-500">行间距大</span>
+                </div>
+              </div>
+            )}
+
             <DownloadButton
               onClick={handleProcess}
               loading={processing}
@@ -323,13 +362,22 @@ export default function PdfWatermarkPage() {
             <p className="text-sm text-green-700 mb-4">
               结果大小：{formatFileSize(resultBlob.size)}
             </p>
-            <button
-              onClick={handleDownload}
-              className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-6 py-3 text-white font-medium hover:bg-green-700 transition-colors shadow-lg shadow-green-200"
-            >
-              <Download className="h-5 w-5" />
-              下载结果
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handlePreview}
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-blue-500 bg-blue-50 px-5 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+              >
+                <Eye className="h-5 w-5" />
+                预览文件
+              </button>
+              <button
+                onClick={handleDownload}
+                className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-6 py-3 text-white font-medium hover:bg-green-700 transition-colors shadow-lg shadow-green-200"
+              >
+                <Download className="h-5 w-5" />
+                下载结果
+              </button>
+            </div>
           </div>
         )}
       </div>

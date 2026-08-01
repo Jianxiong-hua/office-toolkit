@@ -1,4 +1,4 @@
-# Phase 1 需求文档
+# 小蓝盒 Phase 1 需求文档
 
 > 第一阶段目标：零服务器、纯前端，完成基础 PDF 和图片工具，让自己和周围的人能顺手用起来。
 
@@ -16,7 +16,7 @@
 
 **包含**：
 - 3 个 PDF 工具：合并、拆分、水印；
-- 6 个图片工具：压缩、格式转换、缩放、裁剪、Padding、修改 DPI；
+- 5 个图片工具：压缩、格式转换、缩放、快速裁剪、扩展填充（Padding）；
 - 通用基础设施：上传组件、文件列表、处理状态、下载、SEO、错误处理。
 
 **不包含**：
@@ -35,19 +35,21 @@
 - 支持点击选择文件和拖拽上传；
 - 支持多文件批量上传；
 - 拖拽时有视觉反馈（高亮边框/背景）；
-- 超出大小或数量限制时给出明确中文提示；
+- **超出大小、数量限制或格式不支持时，必须在上传区域给出明确的中文错误提示**（而不是静默忽略）；
+- 上传后已选文件可通过"重新选择"按钮（灰底样式：`bg-gray-100` + `text-gray-600`）一键清空当前选择；
 - 移动端点击上传区域能正常调起系统文件选择器。
 
 #### 软件需求
 - 封装 `FileDropZone` 组件，基于 `react-dropzone`；
 - 文件大小限制：
   - 图片单文件 ≤ 20MB；
-  - PDF 单文件 ≤ 50MB；
-  - 批量总大小 ≤ 100MB；
+  - PDF 单文件 ≤ 100MB（PDF 合并、拆分、水印通用）；
+  - PDF 合并批量总大小 ≤ 500MB；
 - 使用 `crypto.randomUUID()` 生成唯一文件 ID；
 - 图片文件生成 Data URL 预览；
 - PDF 文件显示文件名和页数（页数通过 `pdf-lib` 读取）；
-- 严格校验 MIME 类型，不接受隐藏后缀文件。
+- 严格校验 MIME 类型，不接受隐藏后缀文件；
+- 校验失败时通过 `react-dropzone` 的 `validator` 抛出 `AppError`，UI 在上传区下方用红字提示。
 
 ### 2.2 文件列表管理
 
@@ -55,10 +57,13 @@
 - 显示文件名、大小、状态（待处理/处理中/完成/失败）；
 - 支持单个删除和全部清空；
 - 处理完成后显示结果大小、压缩率/页数变化；
-- 支持单个下载和批量打包下载。
+- 支持单个下载和批量打包下载；
+- **所有工具的处理结果必须支持"预览"功能**：在结果文件旁提供预览按钮（眼睛图标），点击后在新窗口中显示结果内容（图片用 `<img>` 居中展示，PDF 用浏览器内置 PDF 阅读器直接打开）；
+- 文件删除按钮采用灰底样式（`text-gray-400` + hover `bg-gray-100`），视觉上比"重新选择"更轻量。
 
 #### 软件需求
 - 封装 `FileList` 组件；
+- 封装 `PreviewButton` 通用预览按钮组件，接受 `blob` + `filename` + `format`（`auto` / `image` / `pdf`），统一处理 `URL.createObjectURL` 创建与延迟回收（`setTimeout` 60s 后 `revokeObjectURL`）；
 - 结果用 `Map<fileId, result>` 存储；
 - 批量下载使用 `jszip` 打包，动态导入减少首屏体积；
 - 文件名生成规则统一：原文件名 + `_processed` / `_compressed` + 扩展名。
@@ -132,18 +137,21 @@
 - 点击"合并"生成按顺序排列的新 PDF；
 - 下载文件名：`merged_首个文件名_等N个文件.pdf`；
 - 合并后显示总页数和总大小；
-- **预览功能**：合并前可预览每个文件的缩略图（PDF 显示第一页，图片显示原图）。
+- **预览功能**：
+  - 合并前可预览每个文件的缩略图（PDF 显示第一页，图片显示原图）；
+  - 合并成功后显示"预览文件"按钮，点击在新窗口打开合并后的 PDF。
 
 #### 软件需求
 - 使用 `pdf-lib`：`PDFDocument.create()` + `copyPages()` + `addPage()`；
 - 读取文件为 `ArrayBuffer`；
 - 设置 `ignoreEncryption: true`，但捕获加密异常并提示；
 - 支持页码范围选择（可选高级功能）；
-- 限制总文件大小 ≤ 100MB；
+- 限制总文件大小 ≤ 500MB（避免合并后文档过大导致浏览器崩溃）；
 - **图片转 PDF**：使用 `pdf-lib` 的 `embedPng()` / `embedJpg()` 将图片嵌入 PDF 页面；
-- **预览功能**：
-  - 合并成功后显示"预览文件"按钮；
-  - 点击按钮使用 `URL.createObjectURL()` 生成临时 URL，通过 `window.open()` 在新窗口打开 PDF；
+- **预览功能实现**：
+  - 使用 `URL.createObjectURL(blob)` 生成临时 URL；
+  - 通过 `window.open(url, "_blank")` 在新窗口打开；
+  - 60 秒后 `URL.revokeObjectURL(url)` 释放内存。
 
 ---
 
@@ -156,7 +164,9 @@
   - **按范围拆分**：输入如 `1-3, 5, 8-10`；
   - **按每 N 页拆分**：如每 5 页一个文件；
   - **提取单页**：每页单独生成一个 PDF；
+  - **逐页提取为 PNG 图片**：在"提取单页"模式下，可勾选"输出 PNG 图片（高清晰度）"复选框，每页渲染为 2× 缩放（适合 Retina 屏或打印）的 PNG 图片；
 - 显示每个拆分结果对应的页码范围；
+- 每个拆分结果旁提供**预览**按钮（图片用 `<img>` 居中预览，PDF 用浏览器内置阅读器预览）；
 - 支持批量下载 ZIP。
 
 #### 软件需求
@@ -165,7 +175,14 @@
 - 校验输入不超过总页数；
 - 每个拆分结果独立保存；
 - 打包为 ZIP 下载；
-- 限制文件 ≤ 50MB，拆分后总页数 ≤ 500 页。
+- 限制文件 ≤ 100MB（拆分前的源文件大小限制）；
+- 拆分后文件肯定小于拆分前，因此不对拆分后的文件大小做限制；
+- 限制拆分后总页数 ≤ 500 页；
+- **PDF 转 PNG 实现**：
+  - 使用 `pdfjs-dist` 渲染 PDF 每一页为 Canvas；
+  - 设置 `pdfjsLib.GlobalWorkerOptions.workerSrc = false` **禁用 worker**，在主线程渲染（避免 Next.js 静态导出/开发环境下 worker 路径解析失败的问题）；
+  - `scale = 2` 表示 2× 渲染（2× 分辨率，高清晰度 PNG，适合 Retina 屏或打印）；
+  - PDF 点（pt）是 PDF 的逻辑尺寸单位（1pt = 1/72 英寸），`scale = 2` 实际是把 1pt 渲染为 2 个像素，渲染出的 PNG 分辨率是原 PDF 尺寸的 2 倍。
 
 ---
 
@@ -175,8 +192,15 @@
 - 支持上传单个 PDF 文件；
 - 支持文字水印：输入文字、字体大小、颜色、透明度、旋转、位置；
 - 支持图片水印：上传 PNG/JPG，调整大小、透明度、位置、旋转；
-- 位置选项：居中、左上、右上、左下、右下；
-- 可选平铺模式；
+- 位置选项：居中、左上、右上、左下、右下、**多行平铺**；
+- **多行平铺模式**：
+  - 把同一个水印按网格铺满整个 PDF 页面；
+  - 滑块控制行间距大小，左端"行间距小"（密集，水印刚好接边），右端"行间距大"（稀疏，水印之间 50% 间隙）；
+  - **保证文字永远不重叠**：滑块范围 1.0 - 1.5，下限 1.0 = 刚好接边（最密集，每个水印独立），上限 1.5 = 50% 间隙（最稀疏）；
+  - 默认值为 1.1（10% 间隙），A4 页面默认字号（48pt）+ 旋转 45° 时约生成 3×4 = 12 个水印；
+  - 自动考虑旋转角度：旋转后水印在水平/垂直方向的实际占用空间 = `W·cosθ + H·sinθ`，按此计算网格间距，**任何 spacingRatio < 1.0 都会导致相邻水印的文字相互覆盖**（因为 effectiveW 已经是旋转后水印水平方向的最大跨度）。
+- 已选文件可通过"重新选择"按钮（灰底样式：`bg-gray-100` + `text-gray-600`）一键清空当前选择；
+- 处理完成后提供"预览文件"按钮，点击在新窗口打开带水印的 PDF 预览；
 - 下载带水印的 PDF。
 
 #### 软件需求
@@ -186,7 +210,17 @@
 - 每页都绘制水印；
 - 透明度通过 `setOpacity` 实现；
 - 旋转通过 `rotateDegrees` 实现；
-- 限制上传 PDF ≤ 50MB。
+- 限制上传 PDF ≤ 100MB；
+- **位置类型定义**（`WatermarkPosition`）：
+  - `center` / `topleft` / `topright` / `bottomleft` / `bottomright`：单点位置；
+  - `tile`：多行平铺；
+- **平铺位置算法**：
+  - 根据旋转角度计算水印在水平/垂直方向的最大跨度 `W' = W·cosθ + H·sinθ`、`H' = W·sinθ + H·cosθ`；
+  - 间距 = `effective × spacingRatio`，`spacingRatio` 由 UI 滑块控制（范围 **1.0 - 1.5**，步长 0.05）；
+  - `spacingRatio = 1.0`：相邻水印刚好接边（最密集，文字互不重叠）；
+  - `spacingRatio = 1.1`：相邻水印 10% 间隙（默认值）；
+  - `spacingRatio = 1.5`：相邻水印 50% 间隙（最稀疏）；
+  - **不允许 `spacingRatio < 1.0`**：因为 `effectiveW` 已经是旋转后水印水平方向的最大跨度，任何 `spacingRatio < 1.0` 都会导致相邻水印文字相互覆盖。
 
 ---
 
@@ -226,7 +260,7 @@
 - 使用 Canvas `drawImage()` + `toBlob()`；
 - 封装 `convertImage(file, targetFormat, quality)` 函数；
 - 透明像素转 JPG 时填充白色背景；
-- BMP 输出使用 Canvas 原生支持或降级提示；
+- **BMP 输出自己实现编码**（浏览器 Canvas API 不支持 `canvas.toBlob("image/bmp")`）：用 `getImageData` 获取 RGBA 像素数据，手工组装 24-bit BMP 格式（BITMAPFILEHEADER 14 字节 + BITMAPINFOHEADER 40 字节 + BGR 像素数据，每行 4 字节对齐，倒序存储）；
 - 文件名替换扩展名；
 - 限制单文件 ≤ 20MB。
 
@@ -251,59 +285,82 @@
 
 ---
 
-### 3.7 图片裁剪 Crop
+### 3.7 图片快速裁剪 / Fast Crop
 
 #### 功能需求
-- 支持上传图片；
-- 支持自由裁剪框；
-- 支持固定比例：1:1、4:3、16:9、3:4、9:16；
-- 支持旋转图片（90° 增量）；
-- 支持翻转（水平/垂直，可选）；
-- 实时预览裁剪结果；
-- 支持按像素输入裁剪尺寸。
+- 支持上传单张图片（PNG、JPG、JPEG、WebP、BMP、GIF）；
+- 支持 5 种固定比例裁剪：1:1、4:3、16:9、3:4、9:16；
+- 支持旋转图片（90° 增量：0°/90°/180°/270°）；
+- 支持翻转图片（水平翻转、垂直翻转，**预览实时反映**）；
+- 显示原始图像信息条（分辨率、文件类型、文件大小）；
+- 已选文件可通过"重新选择"按钮（灰底样式：`bg-gray-100` + `text-gray-600`）一键清空当前选择；
+- 裁剪完成后提供"预览"按钮（眼睛图标），点击在新窗口打开裁剪结果；
+- 下载裁剪结果，文件名：`原文件名_cropped.扩展名`。
 
 #### 软件需求
-- 使用 `react-easy-crop` 或自建 Canvas 裁剪交互；
-- 获取裁剪坐标后用 Canvas 绘制目标区域；
-- 固定比例通过限制裁剪框宽高比实现；
-- 旋转功能先旋转 Canvas 再裁剪；
-- 移动端手势支持。
+- 使用 `react-easy-crop` 实现裁剪框 UI；
+- **不提供"自由"裁剪按钮**：react-easy-crop v5/v6 库基于 `aspect` prop 锁定比例，不支持真正的"自由"模式（作者也明确说过这是库的核心设计），因此只提供 5 种固定比例；
+- **翻转功能**通过预处理 image src 实现：`<Cropper>` 不支持 `flipX/flipY` props，所以用 Canvas 临时翻转原图生成新的 dataURL 传给 Cropper；`translate(canvas.width, 0)` + `scale(-1, 1)` 实现水平翻转，垂直翻转同理；
+- 读取原图分辨率用 `HTMLImageElement.naturalWidth / naturalHeight`；
+- 裁剪结果用 Canvas `drawImage` 提取目标区域并 `toBlob()` 编码；
+- 旋转后用 Canvas 变换矩阵（`translate` + `rotate` + `scale`）绘制；
+- 限制单文件 ≤ 20MB。
 
 ---
 
-### 3.8 Padding / 背景填充
+### 3.8 图片扩展填充 / Padding
 
 #### 功能需求
-- 支持上传图片；
-- 支持设置目标画布尺寸；
-- 支持填充方式：等比缩放居中、拉伸填充、原始尺寸居中；
-- 支持选择背景颜色：白色、透明、自定义颜色；
-- 支持设置单边或四边 Padding；
-- 显示输出尺寸。
+- 支持上传单张图片（PNG、JPG、JPEG、WebP、BMP、GIF）；
+- **不缩放原图**，原图 1:1 放置在扩展后画布上；
+- **两种扩展模式**（用户任选其一）：
+  1. **按 4 边像素**：分别指定上/下/左/右 4 个方向各扩展多少像素；
+  2. **按画布尺寸 + 中心偏移**：指定扩展后画布的总宽 × 总高，以及原图中心点相对画布中心的水平/垂直偏移（`dx`, `dy`，可正可负）；
+- 支持背景颜色：白色、纯色、PNG 透明；
+- 支持输出格式：保持原格式、JPEG、PNG、WebP；
+- 实时显示扩展后的总尺寸 / 各边扩展量；
+- 常用尺寸预设：1 寸证、2 寸证、小红书封面、微信公众号封面、Instagram 方形（点预设后自动填入画布宽高，dx/dy 归零）；
+- 显示输出尺寸、预览、下载。
 
 #### 软件需求
-- 使用 Canvas 创建目标尺寸画布；
-- 计算图片在画布中的绘制位置和尺寸；
-- 透明背景输出为 PNG；
-- 预设常见尺寸（证件照、社交媒体头像）；
-- 文件名添加 `_padded` 后缀。
 
----
+**模式 1：按 4 边像素**
+```
+outputWidth  = originalWidth  + paddingLeft + paddingRight
+outputHeight = originalHeight + paddingTop  + paddingBottom
+drawX = paddingLeft
+drawY = paddingTop
+```
 
-### 3.9 修改分辨率 / DPI
+**模式 2：按画布 + 中心偏移**
+```
+outputWidth  = canvasWidth
+outputHeight = canvasHeight
+baseX = (canvasWidth  - originalWidth)  / 2   // 居中
+baseY = (canvasHeight - originalHeight) / 2
+drawX = clamp(baseX + dx, 0, canvasWidth  - originalWidth)
+drawY = clamp(baseY + dy, 0, canvasHeight - originalHeight)
+```
 
-#### 功能需求
-- 支持上传图片；
-- 支持设置目标 DPI（72、150、300、自定义）；
-- 显示当前像素尺寸和建议打印尺寸；
-- 支持保持像素不变只改显示 DPI，或按目标 DPI 重算像素；
-- 下载修改后的图片。
+**校验规则**
+- 模式 1：4 边像素必须 ≥ 0；
+- 模式 2：`canvasWidth ≥ originalWidth` 且 `canvasHeight ≥ originalHeight`；`dx`/`dy` 范围保证 `drawX ≥ 0` 且 `drawY ≥ 0`；
+- 任一校验失败，给出明确中文错误提示。
 
-#### 软件需求
-- Web 环境下无法直接修改 EXIF DPI；
-- 第一版按"像素 = DPI × 英寸"公式用 Canvas 重绘；
-- 输出格式为 PNG/JPG；
-- 明确提示用户"Web 版按像素尺寸等效调整，不写入 EXIF DPI"。
+**实现**
+- 读取原图用 `HTMLImageElement`，从 `naturalWidth/Height` 获取原始像素尺寸；
+- 用 Canvas `drawImage(img, drawX, drawY, originalWidth, originalHeight)` 1:1 绘制原图；
+- 背景用 `ctx.fillRect` 填充；
+- `canvas.toBlob()` 输出 Blob；
+- 文件名：`原文件名_padded.扩展名`。
+
+**移除旧模式**：
+- ❌ 移除"等比缩放居中"模式（fit-center，原图被缩小，不属于 padding）；
+- ❌ 移除"拉伸填充"模式（stretch，原图被拉伸变形，不属于 padding）；
+- ❌ 移除"原始尺寸居中"模式（original-center，已被模式 2 覆盖）；
+- ❌ 移除"常用尺寸预设"（1 寸证、2 寸证、小红书、公众号、Instagram）；
+- ✅ 画布模式初始值 = 原图尺寸（上传图片后自动同步），用户可自由修改；
+- ✅ 保留"背景颜色 / 透明背景 / 输出格式 / 质量"选项。
 
 ---
 

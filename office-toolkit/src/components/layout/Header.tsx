@@ -8,7 +8,7 @@ export function Header() {
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2 font-bold text-xl text-brand-600">
           <Wrench className="h-6 w-6" />
-          {siteConfig.name}
+          浩匣工具/HaoXia Toolkit
         </Link>
         <nav className="hidden sm:flex items-center gap-6 text-sm">
           <Link href="#image-tools" className="text-gray-600 hover:text-brand-600 transition-colors">
@@ -16,12 +16,6 @@ export function Header() {
           </Link>
           <Link href="#pdf-tools" className="text-gray-600 hover:text-brand-600 transition-colors">
             PDF 工具
-          </Link>
-          <Link
-            href="mailto:feedback@officetoolkit.pro"
-            className="rounded-lg bg-brand-600 px-4 py-2 text-white hover:bg-brand-700 transition-colors"
-          >
-            反馈
           </Link>
         </nav>
       </div>

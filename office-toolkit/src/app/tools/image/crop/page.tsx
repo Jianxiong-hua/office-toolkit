@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Cropper from "react-easy-crop";
-import { Download, RotateCcw, FlipHorizontal, FlipVertical } from "lucide-react";
+import { Download, RotateCcw, FlipHorizontal, FlipVertical, Eye } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
@@ -13,13 +13,13 @@ import {
   downloadBlob,
   formatFileSize,
   generateOutputFilename,
+  loadImage,
   readFileAsDataURL,
 } from "@/lib/file";
 import { AppError, type AppErrorCode, type FileItem } from "@/types";
 import type { Point, Area } from "react-easy-crop";
 
-const aspectRatios = [
-  { value: undefined, label: "自由" },
+const aspectRatios: { value: number; label: string }[] = [
   { value: 1, label: "1:1" },
   { value: 4 / 3, label: "4:3" },
   { value: 16 / 9, label: "16:9" },
@@ -31,10 +31,12 @@ export default function ImageCropPage() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [displaySrc, setDisplaySrc] = useState<string | null>(null);
+  const [originalDimensions, setOriginalDimensions] = useState<{ width: number; height: number } | null>(null);
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
-  const [aspect, setAspect] = useState<number | undefined>(undefined);
+  const [aspect, setAspect] = useState<number>(1);
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [flipX, setFlipX] = useState(false);
   const [flipY, setFlipY] = useState(false);
@@ -45,6 +47,68 @@ export default function ImageCropPage() {
   const [error, setError] = useState<{ code?: AppErrorCode; message: string } | null>(null);
 
   const currentFile = files[currentIndex];
+
+  /**
+   * 根据 flipX/flipY 实时生成翻转后的图片 src
+   * 因为 <Cropper> 不支持 flipX/flipY props，需要预处理 image
+   */
+  useEffect(() => {
+    if (!imageSrc) {
+      setDisplaySrc(null);
+      return;
+    }
+    if (!flipX && !flipY) {
+      setDisplaySrc(imageSrc);
+      return;
+    }
+
+    let cancelled = false;
+    const applyFlip = async () => {
+      try {
+        const img = await loadImage(imageSrc);
+        if (cancelled) return;
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.translate(flipX ? canvas.width : 0, flipY ? canvas.height : 0);
+        ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+        ctx.drawImage(img, 0, 0);
+        if (!cancelled) setDisplaySrc(canvas.toDataURL());
+      } catch {
+        if (!cancelled) setDisplaySrc(imageSrc);
+      }
+    };
+    applyFlip();
+    return () => {
+      cancelled = true;
+    };
+  }, [imageSrc, flipX, flipY]);
+
+  /**
+   * 读取原图分辨率（仅依赖 imageSrc，不依赖翻转状态）
+   * 翻转不改变图片原始像素尺寸
+   */
+  useEffect(() => {
+    if (!imageSrc) {
+      setOriginalDimensions(null);
+      return;
+    }
+    let cancelled = false;
+    loadImage(imageSrc)
+      .then((img) => {
+        if (!cancelled) {
+          setOriginalDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setOriginalDimensions(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [imageSrc]);
 
   const handleFilesAdded = useCallback(async (newFiles: FileItem[]) => {
     const withPreviews = await Promise.all(
@@ -136,10 +200,21 @@ export default function ImageCropPage() {
     downloadBlob(result.blob, name);
   }, [result, currentFile, format]);
 
+  const handlePreview = useCallback(() => {
+    if (!result) return;
+    const url = URL.createObjectURL(result.blob);
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/><title>预览</title><style>html,body{margin:0;height:100%}body{background:#f3f4f6;display:flex;align-items:center;justify-content:center}img{max-width:96%;max-height:96vh;box-shadow:0 4px 24px rgba(0,0,0,.15);background:white}</style></head><body><img src="${url}"/></body></html>`);
+      w.document.close();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }, [result]);
+
   return (
     <ToolLayout
-      title="图片裁剪"
-      description="自由裁剪图片，支持固定比例、旋转、翻转"
+      title="图片快速裁剪"
+      description="5 种固定比例，支持旋转、翻转，快速选定裁剪区域"
     >
       <div className="space-y-6">
         <FileDropZone
@@ -190,17 +265,28 @@ export default function ImageCropPage() {
                   </div>
                   <button
                     onClick={() => handleRemove(currentFile.id)}
-                    className="text-xs text-red-500 hover:underline"
+                    className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
                   >
-                    删除
+                    重新选择
                   </button>
                 </div>
+
+                {originalDimensions && (
+                  <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 mb-3">
+                    <span className="font-medium text-gray-700">原始图像：</span>
+                    {originalDimensions.width} × {originalDimensions.height} 像素
+                    <span className="ml-2 text-gray-400">·</span>
+                    <span className="ml-2">
+                      {currentFile.type || "未知格式"}
+                    </span>
+                  </div>
+                )}
 
                 {imageSrc && (
                   <>
                     <div className="relative h-[320px] w-full rounded-xl bg-gray-900 overflow-hidden">
                       <Cropper
-                        image={imageSrc}
+                        image={displaySrc ?? imageSrc}
                         crop={crop}
                         zoom={zoom}
                         aspect={aspect}
@@ -318,13 +404,22 @@ export default function ImageCropPage() {
                           label="裁剪当前图片"
                         />
                         {result && (
-                          <button
-                            onClick={handleDownload}
-                            className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-6 py-3 text-sm font-medium text-white hover:bg-green-700 transition-colors shadow-lg shadow-green-200"
-                          >
-                            <Download className="h-5 w-5" />
-                            下载 ({result.width}×{result.height})
-                          </button>
+                          <>
+                            <button
+                              onClick={handlePreview}
+                              className="inline-flex items-center gap-2 rounded-xl border-2 border-blue-500 bg-blue-50 px-5 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                            >
+                              <Eye className="h-5 w-5" />
+                              预览 ({result.width}×{result.height})
+                            </button>
+                            <button
+                              onClick={handleDownload}
+                              className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-6 py-3 text-sm font-medium text-white hover:bg-green-700 transition-colors shadow-lg shadow-green-200"
+                            >
+                              <Download className="h-5 w-5" />
+                              下载
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>

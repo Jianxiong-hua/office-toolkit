@@ -136,3 +136,73 @@ export function calculateCropAreaForAspectRatio(
     height: Math.round(height),
   };
 }
+
+/**
+ * 参数化裁剪：按左上角坐标 + 宽高裁剪原图（无旋转、无翻转）
+ * 用于"图片参数化裁剪"工具：用户输入 (x1, y1, x2, y2) 精确指定裁剪区域
+ */
+export interface CropByRegionOptions {
+  x: number;       // 裁剪区域左上角 x
+  y: number;       // 裁剪区域左上角 y
+  width: number;   // 裁剪区域宽度
+  height: number;  // 裁剪区域高度
+  format?: CropOutputFormat;
+  quality?: number;
+}
+
+export async function cropImageByRegion(
+  file: File,
+  options: CropByRegionOptions
+): Promise<{ blob: Blob; width: number; height: number }> {
+  if (!file.type.startsWith("image/")) {
+    throw new AppError("UNSUPPORTED_FORMAT", "请选择图片文件");
+  }
+
+  const { x, y, width, height } = options;
+  if (width <= 0 || height <= 0) {
+    throw new AppError("INVALID_INPUT", "裁剪区域尺寸必须大于 0");
+  }
+
+  const dataUrl = await readFileAsDataURL(file);
+  const img = await loadImage(dataUrl);
+
+  // 边界校验
+  if (x < 0 || y < 0 || x + width > img.naturalWidth || y + height > img.naturalHeight) {
+    throw new AppError(
+      "INVALID_INPUT",
+      `裁剪区域超出图片边界（图片尺寸：${img.naturalWidth}×${img.naturalHeight}）`
+    );
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new AppError("BROWSER_NOT_SUPPORTED", "当前浏览器不支持 Canvas");
+  }
+
+  if (options.format === "jpeg") {
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  // 直接从原图提取目标区域
+  ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
+
+  const mimeType = getOutputMimeType(file.type, options.format ?? "original");
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (b) => {
+        if (b) resolve(b);
+        else reject(new AppError("PROCESS_FAILED", "图片裁剪失败"));
+      },
+      mimeType,
+      mimeType === "image/jpeg" || mimeType === "image/webp"
+        ? options.quality ?? 0.92
+        : undefined
+    );
+  });
+
+  return { blob, width, height };
+}

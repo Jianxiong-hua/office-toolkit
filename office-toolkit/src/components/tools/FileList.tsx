@@ -1,6 +1,6 @@
 "use client";
 
-import { X, FileImage, Download, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, FileImage, Download, CheckCircle2, AlertCircle, Eye } from "lucide-react";
 import { formatFileSize } from "@/lib/file";
 import type { FileItem } from "@/types";
 
@@ -17,6 +17,7 @@ interface FileListProps {
   showPreview?: boolean;
   results?: Map<string, FileResult>;
   onDownload?: (id: string) => void;
+  onPreview?: (id: string) => void;
   processingIds?: Set<string>;
   errorIds?: Map<string, string>;
 }
@@ -27,6 +28,7 @@ export function FileList({
   showPreview = false,
   results,
   onDownload,
+  onPreview,
   processingIds,
   errorIds,
 }: FileListProps) {
@@ -85,6 +87,15 @@ export function FileList({
               </p>
             </div>
             <div className="flex items-center gap-1">
+              {result && onPreview && (
+                <button
+                  onClick={() => onPreview(file.id)}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                  title="预览"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+              )}
               {result && onDownload && (
                 <button
                   onClick={() => onDownload(file.id)}
@@ -99,7 +110,7 @@ export function FileList({
               )}
               <button
                 onClick={() => onRemove(file.id)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
                 title="删除"
               >
                 <X className="h-4 w-4" />

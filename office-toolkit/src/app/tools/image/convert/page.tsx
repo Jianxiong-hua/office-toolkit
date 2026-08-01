@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Download } from "lucide-react";
+import { Download, RotateCcw } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { FileList, type FileResult } from "@/components/tools/FileList";
@@ -47,6 +47,12 @@ export default function ImageConvertPage() {
       next.delete(id);
       return next;
     });
+  }, []);
+
+  const handleReselect = useCallback(() => {
+    setFiles([]);
+    setResults(new Map());
+    setError(null);
   }, []);
 
   const handleConvert = useCallback(async () => {
@@ -96,6 +102,36 @@ export default function ImageConvertPage() {
       downloadBlob(result.blob, name);
     },
     [results, files, format]
+  );
+
+  const handlePreview = useCallback(
+    (id: string) => {
+      const result = results.get(id);
+      const file = files.find((f) => f.id === id);
+      if (!result || !file) return;
+      const url = URL.createObjectURL(result.blob);
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(`
+          <!doctype html>
+          <html lang="zh-CN">
+            <head>
+              <meta charset="utf-8" />
+              <title>${file.name}</title>
+              <style>
+                html,body{margin:0;height:100%}
+                body{background:#f3f4f6;display:flex;align-items:center;justify-content:center}
+                img{max-width:96%;max-height:96vh;box-shadow:0 4px 24px rgba(0,0,0,.15);background:white}
+              </style>
+            </head>
+            <body><img src="${url}"/></body>
+          </html>
+        `);
+        w.document.close();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    },
+    [results, files]
   );
 
   const handleDownloadAll = useCallback(async () => {
@@ -148,11 +184,21 @@ export default function ImageConvertPage() {
           showPreview
           results={results}
           onDownload={handleDownload}
+          onPreview={handlePreview}
         />
 
         {files.length > 0 && (
           <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
-            <h3 className="font-semibold text-gray-900">转换选项</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">转换选项</h3>
+              <button
+                onClick={handleReselect}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                重新选择
+              </button>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">

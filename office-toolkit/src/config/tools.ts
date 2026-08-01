@@ -32,8 +32,8 @@ export const tools: ToolMeta[] = [
   },
   {
     id: "image-crop",
-    name: "图片裁剪",
-    description: "自由裁剪图片，支持固定比例、旋转、翻转",
+    name: "图片快速裁剪",
+    description: "5 种固定比例，支持旋转、翻转，快速选定裁剪区域",
     category: "image",
     path: "/tools/image/crop/",
     icon: "Crop",
@@ -42,21 +42,12 @@ export const tools: ToolMeta[] = [
   },
   {
     id: "image-pad",
-    name: "背景填充",
-    description: "将图片等比居中或拉伸填充到目标画布尺寸，支持自定义背景色",
+    name: "图片扩展填充",
+    description: "在原图四周扩展画布，支持按 4 边像素或画布尺寸 + 中心偏移两种模式",
     category: "image",
     path: "/tools/image/pad/",
     icon: "Image",
-    tags: ["填充", "背景", "证件照", "图片"],
-  },
-  {
-    id: "image-dpi",
-    name: "修改 DPI",
-    description: "按目标 DPI 等效调整图片像素尺寸，适用于打印场景",
-    category: "image",
-    path: "/tools/image/dpi/",
-    icon: "Ruler",
-    tags: ["DPI", "分辨率", "打印", "图片"],
+    tags: ["填充", "扩展", "Padding", "图片"],
   },
 
   // --- PDF 工具 ---
@@ -95,7 +86,5 @@ export const toolsByCategory = {
   image: tools.filter((t) => t.category === "image"),
   pdf: tools.filter((t) => t.category === "pdf"),
 };
-
-export const featuredTools = tools.filter((t) => t.featured);
 
 export const getToolById = (id: string) => tools.find((t) => t.id === id);

@@ -7,14 +7,14 @@ import { siteConfig } from "@/config/site";
 export const metadata: Metadata = {
   title: {
     default: siteConfig.title,
-    template: `%s | ${siteConfig.name}`,
+    template: `%s | ${siteConfig.shortName}`,
   },
   description: siteConfig.description,
   keywords: [
-    "PDF合并", "PDF拆分", "PDF压缩", "图片压缩", "在线抠图",
+    "浩匣", "HaoXia", "PDF合并", "PDF拆分", "PDF压缩", "图片压缩", "在线抠图",
     "图片格式转换", "在线工具", "免费办公工具", "PDF处理", "图片处理",
   ],
-  authors: [{ name: "OfficeToolkit" }],
+  authors: [{ name: siteConfig.shortName, url: siteConfig.url }],
   openGraph: {
     type: "website",
     locale: "zh_CN",

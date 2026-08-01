@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Download, FileText } from "lucide-react";
+import { Download, FileText, Eye } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
@@ -13,12 +13,21 @@ import {
   splitPDFByRanges,
   splitPDFByInterval,
   extractPDFPages,
+  extractPDFPagesAsPng,
 } from "@/lib/pdf/split";
 import { readFileAsArrayBuffer, downloadBlob, formatFileSize } from "@/lib/file";
 import { AppError, type AppErrorCode } from "@/types";
 import type { FileItem } from "@/types";
 
 type SplitMode = "range" | "interval" | "pages";
+type PagesOutputFormat = "pdf" | "png";
+
+interface SplitResult {
+  blob: Blob;
+  name: string;
+  range: string;
+  format: PagesOutputFormat;
+}
 
 export default function PdfSplitPage() {
   const [file, setFile] = useState<FileItem | null>(null);
@@ -26,10 +35,9 @@ export default function PdfSplitPage() {
   const [mode, setMode] = useState<SplitMode>("range");
   const [rangeInput, setRangeInput] = useState("");
   const [interval, setInterval] = useState(1);
+  const [pagesFormat, setPagesFormat] = useState<PagesOutputFormat>("pdf");
   const [processing, setProcessing] = useState(false);
-  const [results, setResults] = useState<
-    { blob: Blob; name: string; range: string }[]
-  >([]);
+  const [results, setResults] = useState<SplitResult[]>([]);
   const [error, setError] = useState<{ code?: AppErrorCode; message: string } | null>(null);
 
   const handleFileAdded = useCallback(async (newFiles: FileItem[]) => {
@@ -69,6 +77,7 @@ export default function PdfSplitPage() {
     try {
       const buffer = await readFileAsArrayBuffer(file.file);
       let splitResults: { bytes: Uint8Array; range: { start: number; end: number } }[] = [];
+      let format: PagesOutputFormat = "pdf";
 
       if (mode === "range") {
         const ranges = parsePageRanges(rangeInput, totalPages);
@@ -76,14 +85,21 @@ export default function PdfSplitPage() {
       } else if (mode === "interval") {
         splitResults = await splitPDFByInterval(buffer, interval);
       } else {
-        splitResults = await extractPDFPages(buffer);
+        format = pagesFormat;
+        splitResults =
+          pagesFormat === "png"
+            ? await extractPDFPagesAsPng(buffer)
+            : await extractPDFPages(buffer);
       }
 
       const baseName = file.name.replace(/\.pdf$/i, "");
-      const newResults = splitResults.map(({ bytes, range }) => ({
-        blob: new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" }),
-        name: `${baseName}_p${range.start}-${range.end}.pdf`,
+      const mime = pagesFormat === "png" && mode === "pages" ? "image/png" : "application/pdf";
+      const ext = pagesFormat === "png" && mode === "pages" ? "png" : "pdf";
+      const newResults: SplitResult[] = splitResults.map(({ bytes, range }) => ({
+        blob: new Blob([bytes.buffer as ArrayBuffer], { type: mime }),
+        name: `${baseName}_p${range.start}-${range.end}.${ext}`,
         range: `第 ${range.start}-${range.end} 页`,
+        format,
       }));
 
       setResults(newResults);
@@ -99,10 +115,29 @@ export default function PdfSplitPage() {
     } finally {
       setProcessing(false);
     }
-  }, [file, totalPages, mode, rangeInput, interval]);
+  }, [file, totalPages, mode, rangeInput, interval, pagesFormat]);
 
   const handleDownload = useCallback((blob: Blob, name: string) => {
     downloadBlob(blob, name);
+  }, []);
+
+  const handlePreview = useCallback((blob: Blob, format: PagesOutputFormat) => {
+    const url = URL.createObjectURL(blob);
+    if (format === "png") {
+      // PNG 打开新窗口展示图片
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(`
+          <!doctype html>
+          <html><head><title>预览</title>
+          <style>body{margin:0;background:#f3f4f6;display:flex;align-items:center;justify-content:center;min-height:100vh}
+          img{max-width:100%;max-height:100vh;box-shadow:0 4px 24px rgba(0,0,0,.15);background:white}</style>
+          </head><body><img src="${url}"/></body></html>
+        `);
+      }
+    } else {
+      window.open(url, "_blank");
+    }
   }, []);
 
   const handleDownloadAll = useCallback(async () => {
@@ -124,7 +159,7 @@ export default function PdfSplitPage() {
         <FileDropZone
           accept={{ "application/pdf": [".pdf"] }}
           maxFiles={1}
-          maxSize={50 * 1024 * 1024}
+          maxSize={100 * 1024 * 1024}
           onFilesAdded={handleFileAdded}
           label="拖拽 PDF 文件到此处，或点击选择"
         />
@@ -150,7 +185,7 @@ export default function PdfSplitPage() {
               </div>
               <button
                 onClick={handleRemove}
-                className="text-xs text-red-500 hover:underline"
+                className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
               >
                 重新选择
               </button>
@@ -213,6 +248,41 @@ export default function PdfSplitPage() {
               </div>
             )}
 
+            {mode === "pages" && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">输出格式</label>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="pagesFormat"
+                      value="pdf"
+                      checked={pagesFormat === "pdf"}
+                      onChange={() => setPagesFormat("pdf")}
+                      className="h-4 w-4 accent-brand-600"
+                    />
+                    <span className="text-sm text-gray-700">单页 PDF</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="pagesFormat"
+                      value="png"
+                      checked={pagesFormat === "png"}
+                      onChange={() => setPagesFormat("png")}
+                      className="h-4 w-4 accent-brand-600"
+                    />
+                    <span className="text-sm text-gray-700">单页 PNG 图片</span>
+                  </label>
+                </div>
+                <p className="text-xs text-gray-400">
+                  {pagesFormat === "png"
+                    ? "提示：每页导出为一张高清晰度 PNG 图片（适合打印或编辑）"
+                    : "提示：每页输出为独立的单页 PDF 文件"}
+                </p>
+              </div>
+            )}
+
             <DownloadButton
               onClick={handleSplit}
               loading={processing}
@@ -254,13 +324,22 @@ export default function PdfSplitPage() {
                       {r.range} · {formatFileSize(r.blob.size)}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleDownload(r.blob, r.name)}
-                    className="inline-flex items-center gap-1 rounded-lg bg-green-100 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-200 transition-colors"
-                  >
-                    <Download className="h-4 w-4" />
-                    下载
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handlePreview(r.blob, r.format)}
+                      className="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-200 transition-colors"
+                    >
+                      <Eye className="h-4 w-4" />
+                      预览
+                    </button>
+                    <button
+                      onClick={() => handleDownload(r.blob, r.name)}
+                      className="inline-flex items-center gap-1 rounded-lg bg-green-100 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-200 transition-colors"
+                    >
+                      <Download className="h-4 w-4" />
+                      下载
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
