@@ -143,9 +143,17 @@ export async function extractPDFPagesAsPng(
 ): Promise<{ bytes: Uint8Array; range: SplitRange }[]> {
   // 动态导入避免 SSR 问题
   const pdfjsLib = await import("pdfjs-dist");
-  // 禁用 worker：在主线程渲染（单文件处理，worker 收益不大）
-  // pdfjs-dist 要求 workerSrc 是 string 类型，赋空字符串即可禁用 worker
+  // pdfjs 6.x 在浏览器要求 workerSrc 非空，但可以通过预先把 WorkerMessageHandler
+  // 挂到 globalThis.pdfjsWorker 来走"主线程 worker"分支，绕过真实 worker 加载
   pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+  if (!(globalThis as any).pdfjsWorker) {
+    const workerModule: any = await import(
+      "pdfjs-dist/build/pdf.worker.min.mjs"
+    );
+    (globalThis as any).pdfjsWorker = {
+      WorkerMessageHandler: workerModule.WorkerMessageHandler,
+    };
+  }
 
   const data = new Uint8Array(buffer);
   const loadingTask = pdfjsLib.getDocument({ data });

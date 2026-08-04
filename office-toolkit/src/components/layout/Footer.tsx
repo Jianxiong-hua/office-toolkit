@@ -42,6 +42,11 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/changelog" className="text-gray-500 hover:text-brand-600 transition-colors">
+                  更新历史
+                </Link>
+              </li>
+              <li>
                 <Link href="/about#contact" className="text-gray-500 hover:text-brand-600 transition-colors">
                   联系我们
                 </Link>

@@ -19,7 +19,12 @@ export interface ImageCompressOptions {
   quality: number; // 10-100
   maxWidth?: number;
   maxHeight?: number;
-  format: "original" | "jpeg" | "webp" | "png";
+  format: "original" | "jpeg" | "webp" | "png" | "gif";
+  /**
+   * GIF 输出颜色数（仅当 format 为 "gif" 时生效）
+   * 8 / 16 / 32 / 64 / 128 / 256
+   */
+  gifColors?: 8 | 16 | 32 | 64 | 128 | 256;
 }
 
 export interface PdfWatermarkOptions {

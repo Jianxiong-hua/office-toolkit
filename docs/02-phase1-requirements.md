@@ -153,6 +153,35 @@
   - 通过 `window.open(url, "_blank")` 在新窗口打开；
   - 60 秒后 `URL.revokeObjectURL(url)` 释放内存。
 
+#### 「自动缩小过大的图片文件」选项（v1.1.2 新增）
+
+**功能需求**：
+- 在文件列表下方增加复选框「自动缩小过大的图片文件」；
+- 勾选后展开 radio 组，提供「72 DPI」「96 DPI」两个目标 DPI 选项（默认 96）；
+- 不勾选：图片按原始尺寸嵌入（保持现有行为）；
+- 勾选：上传的图片文件按所选 DPI 缩小到与 A4 页面等宽（高度等比缩放）后再嵌入；
+- 下方提示文字「⚠ 该模式仅适用于电子版查看，不适合打印（打印通常需要 300 DPI）」。
+
+**作用范围**：
+- 仅对 `type === "image"` 的文件生效；
+- `type === "pdf"` 的文件**完全保留原始字节**，不做任何处理、重渲染或栅格化（与是否勾选无关）。
+
+**缩放规则**：
+- 目标宽度 = A4 宽 8.27 英寸 × DPI
+  - 72 DPI → 595 px
+  - 96 DPI → 794 px
+- 高度按原图宽高比等比缩放；
+- 原图已比目标宽度更窄时**不放大**，按原尺寸嵌入；
+- 保持原始格式：PNG → PNG（像素减少但无损）、JPEG → JPEG（q=0.85 重编码）；不做跨格式转换，避免对噪声类 PNG 错误地改用 JPEG 反而变大。
+
+**设计意图**：
+- 解决「高清图直接嵌入 PDF 导致合并后体积巨大」的问题；
+- 72/96 DPI 接近屏幕常用显示密度（Windows 96 DPI、macOS 100~200 DPI），舍弃打印场景的 300 DPI 精度以换取更小的文件体积；
+- 显式标注「不适合打印」，避免用户在高 DPI 打印场景下误用导致清晰度不足。
+
+**接口变更**：
+- `mergeMixedFiles(files, options)` 接收 `options.shrinkImageFiles: boolean` 与 `options.targetDpi: 72 | 96`。
+
 ---
 
 ### 3.2 PDF 拆分
@@ -228,21 +257,54 @@
 
 #### 功能需求
 - 支持上传单张或多张图片；
-- 支持格式：JPG、PNG、WebP、BMP、GIF（静态）；
-- 可调节压缩质量（10%–100%）；
-- 可选择输出格式：保持原格式 / JPG / PNG / WebP；
-- 可设置最大宽度/高度限制；
+- **支持格式**：JPG、PNG、WebP、BMP、GIF（**静态 + 动画，完整支持保留动画**）；
+- **可调节压缩质量**（10%–100%）——**仅对 JPG / PNG / WebP 有效**；
+- **GIF 颜色数控制**（8 / 16 / 32 / 64 / 128 / 256）——**仅对 GIF 有效**，默认 128；
+- 可选择输出格式：保持原格式 / JPG / PNG / WebP / **GIF**；
+- **输出 GIF 的限制**（重要边界条件）：
+  - **仅当输入为 GIF 时才能输出 GIF**；其他格式（PNG/JPG/WebP/BMP）不能转换为 GIF，UI 在压缩时对该文件报 `UNSUPPORTED_FORMAT` 错误（其他文件继续处理，不中断整批）；
+  - 输入为 GIF、输出选 `JPG/PNG/WebP` 时**也拒绝**（避免职责重叠，引导用户用「格式转换」工具做跨格式转换）；
+  - 输出 GIF **保留原始动画**（帧数、帧延迟、透明度）；
+  - 颜色数越小文件越小，但视觉质量越低（出现色块 / 噪点）；8 色 + 透明时实际可视颜色仅 7 色（1 个调色板槽位被透明度占用）；
+  - **重新压缩可能比原文件大**：因为重编码为全帧 + dispose=2，会丢失原 GIF 的帧间优化（如「只更新变化像素」的 partial frame）。这是已知 trade-off，UI 正常显示「压缩率 -X%」即可；
+- 可设置最大宽度 / 高度限制（按比例缩放，**永不放大**）；
 - 显示原图大小、压缩后大小、压缩率；
+- **GIF 结果额外显示**：原始尺寸（`width × height`）、帧数、使用的颜色数（`info: "320×240 · 24帧 · 128色"`）；
 - 支持单张下载和批量 ZIP 下载。
 
 #### 软件需求
-- 使用 `browser-image-compression`；
-- `maxSizeMB` 根据质量等级设置合理目标大小；
-- 使用 Web Worker 进行压缩；
-- 输出格式通过 `fileType` 参数控制；
-- 批量压缩循环处理，显示当前进度；
-- 压缩前生成 Data URL 预览；
-- 限制单文件 ≤ 20MB，批量总大小 ≤ 100MB。
+- **架构**：`compressImage()` 在 `lib/image/compress.ts` 中作为**分发器（dispatcher）**，按输入 MIME 类型分发：
+  - 输入 MIME 为 `image/gif` 且输出 `original` 或 `gif` → 调用 `lib/image/compress-gif.ts` 的 `compressGif()`；
+  - 输入 MIME 为 `image/gif` 且输出 `jpeg/webp/png` → 抛出 `UNSUPPORTED_FORMAT` 错误（提示用户改用「格式转换」工具）；
+  - 输入 MIME 非 `image/gif` 且输出 `gif` → 抛出 `UNSUPPORTED_FORMAT` 错误（提示用户先转换为 GIF 再压缩，但本工具不提供此转换）；
+  - 其他情况 → 调用 `browser-image-compression` 原有路径（逻辑不变）；
+- **GIF 解码**：使用 [`gifuct-js`](https://www.npmjs.com/package/gifuct-js) 的 `parseGIF()` + `decompressFrames(buildPatch=true)`：
+  - `decompressFrames` 返回的是**patch 矩形**（位于 `(dims.left, dims.top)`、尺寸 `dims.width × dims.height`），不是全屏；
+  - **必须手动应用 disposal method**（0/1/2/3）以正确合成每一帧的全屏 RGBA 缓冲：
+    - 处理当前帧前，先按**上一帧**的 `disposalType` 处理画布：
+      - 上一帧 `disposal=2`（restore to background）：`ctx.clearRect(prev.dims.left, prev.dims.top, prev.dims.width, prev.dims.height)`；
+      - 上一帧 `disposal=3`（restore to previous）：用预先保存的 `ImageData` 调 `ctx.putImageData()` 恢复；
+      - `disposal=0/1`：不动；
+    - 如果**当前帧**的 `disposal=3`，需先备份 `ImageData`（用于处理下一帧时恢复）；
+    - 绘制当前帧 patch：`ctx.putImageData(new ImageData(f.patch, f.dims.width, f.dims.height), f.dims.left, f.dims.top)`；
+    - 快照全屏 `ctx.getImageData(0, 0, width, height)` → `Uint8ClampedArray`（每帧的完整 RGBA）；
+  - 帧延迟 `delay` 从 `gifuct-js` 拿到的是毫秒（已乘 10）；编码时 clamp 到 `≥ 20ms`（避免浏览器跳过超快帧）；
+  - 检测透明度：检查 `frame.transparentIndex !== undefined` 或扫描全屏 RGBA 中是否有 alpha < 255 的像素；
+- **GIF 编码**：使用 [`gifenc`](https://github.com/mattdesl/gifenc) 的 `quantize()` + `applyPalette()` + `GIFEncoder().writeFrame()`：
+  - **每帧独立调色板**（per-frame palette），质量更好（trade-off：比全局调色板文件略大）；
+  - 有透明度的帧：`format: "rgba4444"` + `oneBitAlpha: true`，palette 预留索引 0 为透明（实际可视颜色 = `colors - 1`）；
+  - 无透明度的帧：`format: "rgb565"`（默认）；
+  - 写入时统一设置 `dispose: 2`（restore to background）+ `repeat: 0`（无限循环），与绝大多数动画 GIF 行为一致；
+  - 可选 `maxWidth/maxHeight` 缩放：用 Canvas 重采样每帧 RGBA（**永不放大**：`scale = min(maxW/w, maxH/h, 1)`）；
+- **依赖**：`gifenc@^1.0.3`、`gifuct-js@^2.1.2`：
+  - 均为纯 JS，无 Web Worker / Node API / SharedArrayBuffer 依赖，与 Next.js 静态导出完全兼容；
+  - bundle 影响：压缩页增加约 **15 KB gzipped**（其他路由不加载，因为是 route-level code splitting）；
+- **Canvas context 优化**：所有频繁调用 `getImageData` 的 canvas 必须用 `getContext("2d", { willReadFrequently: true })`，避免 Chrome 性能警告；
+- 限制单文件 ≤ 20MB，批量总大小 ≤ 100MB（与其他图片工具一致）；
+- 错误码：
+  - GIF 解码失败 / 帧数为 0 → `PROCESS_FAILED`；
+  - 非 GIF 输入 + 输出 GIF → `UNSUPPORTED_FORMAT`；
+  - GIF 输入 + 输出非 GIF → `UNSUPPORTED_FORMAT`（引导用「格式转换」）。
 
 ---
 

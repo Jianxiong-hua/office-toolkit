@@ -18,6 +18,8 @@ export default function PdfMergePage() {
   const [processing, setProcessing] = useState(false);
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [shrinkImageFiles, setShrinkImageFiles] = useState(false);
+  const [targetDpi, setTargetDpi] = useState<72 | 96>(96);
 
   const handleFilesAdded = useCallback(async (newFiles: FileItem[]) => {
     const mergeFiles: MergeFileItem[] = newFiles.map((f) => {
@@ -77,16 +79,23 @@ export default function PdfMergePage() {
         type: f.fileType,
       }));
       
-      const mergedBytes = await mergeMixedFiles(mergeFiles);
+      const mergedBytes = await mergeMixedFiles(mergeFiles, {
+        shrinkImageFiles,
+        targetDpi,
+      });
       const blob = new Blob([mergedBytes.buffer as ArrayBuffer], { type: "application/pdf" });
       setResultBlob(blob);
     } catch (err) {
       console.error("Merge failed:", err);
-      setError("合并失败，请检查文件格式是否正确");
+      const detail =
+        err instanceof Error
+          ? `：${err.message}`
+          : "";
+      setError(`合并失败${detail}，请检查文件格式或重试`);
     } finally {
       setProcessing(false);
     }
-  }, [files]);
+  }, [files, shrinkImageFiles, targetDpi]);
 
   const handleDownload = useCallback(() => {
     if (!resultBlob) return;
@@ -191,6 +200,55 @@ export default function PdfMergePage() {
                 {error}
               </div>
             )}
+
+            <div className="mt-5 rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={shrinkImageFiles}
+                  onChange={(e) => setShrinkImageFiles(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-brand-600"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-700">
+                    自动缩小过大的图片文件
+                  </span>
+                </div>
+              </label>
+
+              {shrinkImageFiles && (
+                <div className="mt-3 ml-6 rounded-md border border-gray-200 bg-white p-3">
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm font-medium text-gray-700">目标 DPI：</span>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="target-dpi"
+                        value="72"
+                        checked={targetDpi === 72}
+                        onChange={() => setTargetDpi(72)}
+                        className="h-3.5 w-3.5 accent-brand-600"
+                      />
+                      <span className="text-sm text-gray-700">72 DPI</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="target-dpi"
+                        value="96"
+                        checked={targetDpi === 96}
+                        onChange={() => setTargetDpi(96)}
+                        className="h-3.5 w-3.5 accent-brand-600"
+                      />
+                      <span className="text-sm text-gray-700">96 DPI</span>
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-amber-600">
+                    ⚠ 该模式仅适用于电子版查看，不适合打印（打印通常需要 300 DPI）
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div className="mt-6 flex items-center gap-3">
               <DownloadButton

@@ -19,6 +19,10 @@
 | `test-pad.js` | 测试图片扩展填充功能（两种模式） |
 | `test-pad-after.js` / `test-pad-edge.js` / `test-pad-final.js` | pad 功能迭代过程的中间版本 |
 | `test-sky-box.js` | 验证品牌名从 Sky-Box 替换为 HaoXia/浩匣 |
+| `gen-test-gif.js` | 生成 5 帧动画 GIF 测试资源（写入 `public/test-anim.gif`） |
+| `gen-test-png.js` | 生成最小 PNG 测试资源（写入 `public/test.png`） |
+| `test-gif-compress.js` | **端到端测试图片压缩 GIF 功能**（11 项检查：上传、输出切换、颜色数、压缩、下载、预览、文件合法性） |
+| `test-gif-mixed.js` | 端到端测试错误路径：PNG + GIF 混合批次 + 输出 GIF → PNG 报错，GIF 成功 |
 
 ## 正式测试目录
 
