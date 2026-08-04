@@ -39,14 +39,22 @@ export async function compressImage(
     }
     const result = await compressGif(file, {
       colors: (opts.gifColors ?? 128) as GifColorCount,
-      maxWidth: opts.maxWidth,
-      maxHeight: opts.maxHeight,
+      maxWidth: opts.gifMaxWidth,
+      maxHeight: opts.gifMaxHeight,
+      targetFps: opts.gifFps,
+      mergeDuplicates: opts.gifMergeDuplicates ?? true,
     });
+    const newFps =
+      result.frameCount > 0 && opts.gifFps && opts.gifFps > 0
+        ? opts.gifFps
+        : undefined;
     return {
       blob: result.blob,
       originalSize: result.originalSize,
       compressedSize: result.compressedSize,
-      info: `${result.width}×${result.height} · ${result.frameCount}帧 · ${opts.gifColors ?? 128}色`,
+      info: `${result.width}×${result.height} · ${result.frameCount}帧${
+        newFps ? ` · ${newFps}fps` : ""
+      } · ${opts.gifColors ?? 128}色`,
     };
   }
 

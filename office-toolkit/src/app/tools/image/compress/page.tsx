@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Download } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { FileList, type FileResult } from "@/components/tools/FileList";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { compressImage, getCompressionRatio } from "@/lib/image/compress";
-import type { GifColorCount } from "@/lib/image/compress-gif";
+import {
+  parseGifMetadata,
+  type GifColorCount,
+  type GifMetadata,
+} from "@/lib/image/compress-gif";
 import {
   formatFileSize,
   downloadBlob,
@@ -32,9 +36,55 @@ export default function ImageCompressPage() {
     quality: 80,
     format: "original",
     gifColors: 128,
+    gifMergeDuplicates: true,
   });
   const [results, setResults] = useState<Map<string, FileResult>>(new Map());
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
+  /** 每个 GIF 文件的元信息（异步解析） */
+  const [gifMetadata, setGifMetadata] = useState<Map<string, GifMetadata>>(
+    new Map()
+  );
+
+  // 当 GIF 文件变化时，异步解析元信息
+  useEffect(() => {
+    const gifFiles = files.filter((f) => f.file.type === "image/gif");
+    const toParse = gifFiles.filter((f) => !gifMetadata.has(f.id));
+    if (toParse.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const updates = new Map<string, GifMetadata>();
+      for (const f of toParse) {
+        try {
+          const meta = await parseGifMetadata(f.file);
+          updates.set(f.id, meta);
+        } catch (e) {
+          // 解析失败时跳过（不显示当前值）
+          console.warn(`[parseGifMetadata] ${f.name} failed:`, e);
+        }
+      }
+      if (cancelled || updates.size === 0) return;
+      setGifMetadata((prev) => {
+        const next = new Map(prev);
+        updates.forEach((v, k) => next.set(k, v));
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [files, gifMetadata]);
+
+  // 文件被移除时清理元信息
+  useEffect(() => {
+    setGifMetadata((prev) => {
+      const ids = new Set(files.map((f) => f.id));
+      const next = new Map<string, GifMetadata>();
+      prev.forEach((v, k) => {
+        if (ids.has(k)) next.set(k, v);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [files]);
 
   const handleFilesAdded = useCallback(async (newFiles: FileItem[]) => {
     const withPreviews = await Promise.all(
@@ -207,6 +257,18 @@ export default function ImageCompressPage() {
   const showQualitySlider =
     options.format !== "gif" && (!hasAnyGif || !gifFilesOnly);
 
+  // 取首个 GIF 的元信息作为"当前值"参考
+  const currentGifMeta: GifMetadata | undefined = (() => {
+    if (!useGifControls) return undefined;
+    for (const f of files) {
+      if (f.file.type === "image/gif") {
+        const m = gifMetadata.get(f.id);
+        if (m) return m;
+      }
+    }
+    return undefined;
+  })();
+
   return (
     <ToolLayout
       title="图片压缩"
@@ -242,32 +304,13 @@ export default function ImageCompressPage() {
           <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
             <h3 className="font-semibold text-gray-900">压缩选项</h3>
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* 左侧：根据是否走 GIF 路径，显示颜色数 / 质量 */}
+              {/* 左侧：根据是否走 GIF 路径，显示 GIF 控件 / 质量 */}
               {useGifControls ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    GIF 颜色数: {options.gifColors ?? 128}
-                  </label>
-                  <select
-                    value={String(options.gifColors ?? 128)}
-                    onChange={(e) =>
-                      setOptions({
-                        ...options,
-                        gifColors: Number(e.target.value) as GifColorCount,
-                      })
-                    }
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
-                  >
-                    {GIF_COLOR_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-gray-400">
-                    颜色数越小，文件越小，视觉质量越低（适合表情包 / 贴图）
-                  </p>
-                </div>
+                <GifOptionsPanel
+                  options={options}
+                  onChange={setOptions}
+                  currentMeta={currentGifMeta}
+                />
               ) : showQualitySlider ? (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -373,5 +416,172 @@ export default function ImageCompressPage() {
         )}
       </div>
     </ToolLayout>
+  );
+}
+
+/**
+ * GIF 压缩选项面板：色深 / 宽 / 高 / 帧率 / 合并重复帧
+ * 每个控件旁显示"当前 X"（来自首个 GIF 的元信息）
+ */
+function GifOptionsPanel({
+  options,
+  onChange,
+  currentMeta,
+}: {
+  options: ImageCompressOptions;
+  onChange: (o: ImageCompressOptions) => void;
+  currentMeta?: GifMetadata;
+}) {
+  const curFps =
+    currentMeta && currentMeta.avgDelayMs > 0
+      ? (1000 / currentMeta.avgDelayMs).toFixed(1)
+      : "—";
+  const curColors = currentMeta?.colorCount ?? "—";
+  const curW = currentMeta?.width ?? "—";
+  const curH = currentMeta?.height ?? "—";
+  const curFrames = currentMeta?.frameCount ?? "—";
+
+  return (
+    <div className="space-y-3">
+      {/* 当前值信息条 */}
+      {currentMeta && (
+        <div className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">
+          <span className="font-medium text-gray-700">当前：</span>
+          {curW}×{curH} · {curFrames} 帧 · {curFps} fps · {curColors} 色
+        </div>
+      )}
+
+      {/* 色深 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          GIF 颜色数: {options.gifColors ?? 128}
+          {currentMeta && (
+            <span className="ml-1.5 text-xs font-normal text-gray-400">
+              （当前 {curColors}）
+            </span>
+          )}
+        </label>
+        <select
+          value={String(options.gifColors ?? 128)}
+          onChange={(e) =>
+            onChange({ ...options, gifColors: Number(e.target.value) as GifColorCount })
+          }
+          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+        >
+          {GIF_COLOR_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-gray-400">
+          颜色数越小，文件越小，视觉质量越低
+        </p>
+      </div>
+
+      {/* 宽 / 高 */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            最大宽度 (px)
+            {currentMeta && (
+              <span className="ml-1.5 text-xs font-normal text-gray-400">
+                （当前 {curW}）
+              </span>
+            )}
+          </label>
+          <input
+            type="number"
+            min={1}
+            placeholder="不限制"
+            value={options.gifMaxWidth ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange({
+                ...options,
+                gifMaxWidth: v === "" ? undefined : Math.max(1, Number(v)),
+              });
+            }}
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            最大高度 (px)
+            {currentMeta && (
+              <span className="ml-1.5 text-xs font-normal text-gray-400">
+                （当前 {curH}）
+              </span>
+            )}
+          </label>
+          <input
+            type="number"
+            min={1}
+            placeholder="不限制"
+            value={options.gifMaxHeight ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange({
+                ...options,
+                gifMaxHeight: v === "" ? undefined : Math.max(1, Number(v)),
+              });
+            }}
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+          />
+        </div>
+      </div>
+      <p className="-mt-1 text-xs text-gray-400">
+        留空 = 不限制；只缩小、不放大
+      </p>
+
+      {/* 帧率 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          目标帧率 (fps)
+          {currentMeta && (
+            <span className="ml-1.5 text-xs font-normal text-gray-400">
+              （当前 {curFps}）
+            </span>
+          )}
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={50}
+          step={1}
+          placeholder="保持原速"
+          value={options.gifFps ?? ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            onChange({
+              ...options,
+              gifFps: v === "" ? undefined : Math.max(1, Number(v)),
+            });
+          }}
+          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+        />
+        <p className="mt-1 text-xs text-gray-400">
+          低于原帧率时按比例丢帧；不会自动补帧
+        </p>
+      </div>
+
+      {/* 合并重复帧 */}
+      <label className="flex items-center gap-2 cursor-pointer rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 hover:bg-gray-100 transition-colors">
+        <input
+          type="checkbox"
+          checked={options.gifMergeDuplicates ?? true}
+          onChange={(e) =>
+            onChange({ ...options, gifMergeDuplicates: e.target.checked })
+          }
+          className="h-4 w-4 accent-brand-600"
+        />
+        <div>
+          <span className="text-sm font-medium text-gray-700">合并连续重复帧</span>
+          <p className="mt-0.5 text-xs text-gray-500">
+            自动跳过完全相同的相邻帧，delay 累加到保留帧
+          </p>
+        </div>
+      </label>
+    </div>
   );
 }

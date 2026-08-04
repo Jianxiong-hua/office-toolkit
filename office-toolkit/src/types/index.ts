@@ -25,6 +25,22 @@ export interface ImageCompressOptions {
    * 8 / 16 / 32 / 64 / 128 / 256
    */
   gifColors?: 8 | 16 | 32 | 64 | 128 | 256;
+  /**
+   * GIF 最大宽度（仅 format 为 "gif" 时生效）。原图比此值更宽则等比缩小，永不放大
+   */
+  gifMaxWidth?: number;
+  /**
+   * GIF 最大高度（仅 format 为 "gif" 时生效）。原图比此值更高则等比缩小，永不放大
+   */
+  gifMaxHeight?: number;
+  /**
+   * GIF 目标帧率 fps（仅 format 为 "gif" 时生效）。未设置则保持原速；设置为低于原帧率会丢帧
+   */
+  gifFps?: number;
+  /**
+   * GIF 是否合并连续重复帧（仅 format 为 "gif" 时生效）。默认 true
+   */
+  gifMergeDuplicates?: boolean;
 }
 
 export interface PdfWatermarkOptions {
