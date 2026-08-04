@@ -1,0 +1,12 @@
+{
+  "name": "office-toolkit-monorepo",
+  "private": true,
+  "description": "Root workspace for office-toolkit (Next.js app lives in ./office-toolkit)",
+  "scripts": {
+    "validate": "cd office-toolkit && npm run validate",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}
