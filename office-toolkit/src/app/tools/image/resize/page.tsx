@@ -26,6 +26,15 @@ function getBaseDimension(
   return first ?? null;
 }
 
+/**
+ * 将百分比格式化为最多 4 位小数，避免整数取整丢失精度。
+ * 如 ratio*100 = 33.333333... → "33.3333"。
+ */
+function roundPercent(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  return String(Math.round(value * 10000) / 10000);
+}
+
 export default function ImageResizePage() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [width, setWidth] = useState<string>("");
@@ -57,7 +66,7 @@ export default function ImageResizePage() {
         const ratio = w / base.width;
         const newH = Math.round(base.height * ratio);
         setHeight(String(newH));
-        setPercent(String(Math.round(ratio * 100)));
+        setPercent(roundPercent(ratio * 100));
       }
     },
     [keepRatio, originalDimensions]
@@ -78,7 +87,7 @@ export default function ImageResizePage() {
         const ratio = h / base.height;
         const newW = Math.round(base.width * ratio);
         setWidth(String(newW));
-        setPercent(String(Math.round(ratio * 100)));
+        setPercent(roundPercent(ratio * 100));
       }
     },
     [keepRatio, originalDimensions]
@@ -182,10 +191,11 @@ export default function ImageResizePage() {
     setError(null);
     setResults(new Map());
 
+    // 缩放以宽/高为准：保持宽高比时三者自动联动，percent 仅作输入显示，
+    // 不直接参与缩放计算（联动算出的宽/高才是真实缩放依据）。
     const options: ResizeOptions = {
       width: width ? Number(width) : undefined,
       height: height ? Number(height) : undefined,
-      percent: keepRatio && percent ? Number(percent) : undefined,
       keepRatio,
       format,
       quality: quality / 100,

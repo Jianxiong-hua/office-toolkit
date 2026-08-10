@@ -18,6 +18,8 @@ dist/
 .DS_Store
 *.pem
 .vscode/
+.codebuddy/
+.tree/
 
 # Debug
 npm-debug.log*

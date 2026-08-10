@@ -4,7 +4,6 @@ import { AppError } from "@/types";
 export interface ResizeOptions {
   width?: number;
   height?: number;
-  percent?: number;
   keepRatio?: boolean;
   mode?: "fit" | "stretch" | "cover";
   format?: "original" | "jpeg" | "png" | "webp";
@@ -23,6 +22,9 @@ function getOutputMimeType(
 
 /**
  * 计算缩放后的尺寸
+ *
+ * 缩放一律以宽/高为准。保持宽高比时，三个输入框（宽/高/百分比）在 UI 层自动联动，
+ * 百分比仅作输入与显示，实际缩放依据是联动计算出的宽/高尺寸。
  */
 export function calculateResizeDimensions(
   originalWidth: number,
@@ -31,12 +33,6 @@ export function calculateResizeDimensions(
 ): { width: number; height: number } {
   let width = originalWidth;
   let height = originalHeight;
-
-  if (options.percent && options.percent > 0) {
-    width = Math.round(originalWidth * (options.percent / 100));
-    height = Math.round(originalHeight * (options.percent / 100));
-    return { width, height };
-  }
 
   if (options.keepRatio !== false) {
     const ratio = originalWidth / originalHeight;
