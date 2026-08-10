@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Download } from "lucide-react";
+import { Download, RotateCcw } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { FileList, type FileResult } from "@/components/tools/FileList";
@@ -111,6 +111,14 @@ export default function ImageCompressPage() {
       next.delete(id);
       return next;
     });
+  }, []);
+
+  // 重新选择：清空所有文件、结果与元信息
+  const handleReselect = useCallback(() => {
+    setFiles([]);
+    setResults(new Map());
+    setErrors(new Map());
+    setGifMetadata(new Map());
   }, []);
 
   // 单一文件处理：返回结果或抛错
@@ -302,7 +310,16 @@ export default function ImageCompressPage() {
         {/* 压缩选项 */}
         {files.length > 0 && (
           <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
-            <h3 className="font-semibold text-gray-900">压缩选项</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">压缩选项</h3>
+              <button
+                onClick={handleReselect}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                重新选择
+              </button>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {/* 左侧：根据是否走 GIF 路径，显示 GIF 控件 / 质量 */}
               {useGifControls ? (

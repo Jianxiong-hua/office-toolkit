@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Download, FileText, Eye } from "lucide-react";
+import { Download, FileText, Eye, RotateCcw } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
@@ -185,8 +185,9 @@ export default function PdfSplitPage() {
               </div>
               <button
                 onClick={handleRemove}
-                className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
               >
+                <RotateCcw className="h-3.5 w-3.5" />
                 重新选择
               </button>
             </div>

@@ -16,6 +16,16 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-08",
+    title: "体验优化与 Bug 修复",
+    changes: [
+      "修复图片缩放问题：锁定宽高比时输入精确宽高，会因联动百分比取整导致输出尺寸不准，现改为缩放一律以宽/高为准",
+      "图片压缩新增「重新选择」按钮，可一键清空文件重新上传",
+      "统一各图片工具及 PDF 工具的「重新选择」按钮样式，交互更一致",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-08",
     title: "PDF 合并「自动缩小图片文件」",
