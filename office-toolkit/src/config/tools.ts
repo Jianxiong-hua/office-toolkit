@@ -58,6 +58,15 @@ export const tools: ToolMeta[] = [
     icon: "Image",
     tags: ["填充", "扩展", "Padding", "图片"],
   },
+  {
+    id: "image-picker",
+    name: "取色器",
+    description: "从图片、屏幕或调色板取色，左右双区对比 HEX / RGB / HSL / HSV",
+    category: "image",
+    path: "/tools/image/picker/",
+    icon: "Pipette",
+    tags: ["取色", "颜色", "色值", "RGB", "HSL"],
+  },
 
   // --- PDF 工具 ---
   {

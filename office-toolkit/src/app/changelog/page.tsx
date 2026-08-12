@@ -16,6 +16,17 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-08",
+    title: "新增「取色器」工具",
+    changes: [
+      "新增「取色器」：可从图片、屏幕（Chrome/Edge）、调色板三种来源取色",
+      "左右双区对比面板：两区各自取色并紧挨展示，方便直观对比颜色差异",
+      "实时显示 HEX / RGB / HSL / HSV 四种色值，点击即可复制",
+      "自动保存取色历史（刷新保留，关闭浏览器后清空），可点击历史色块复用",
+    ],
+  },
+  {
     version: "1.1.3",
     date: "2026-08",
     title: "体验优化与 Bug 修复",
