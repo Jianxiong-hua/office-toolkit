@@ -17,6 +17,9 @@ export function Header() {
           <Link href="#pdf-tools" className="text-gray-600 hover:text-brand-600 transition-colors">
             PDF 工具
           </Link>
+          <Link href="#design-tools" className="text-gray-600 hover:text-brand-600 transition-colors">
+            设计/计算
+          </Link>
         </nav>
       </div>
     </header>

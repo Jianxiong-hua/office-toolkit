@@ -6,7 +6,7 @@ import { Shield, Zap, Heart } from "lucide-react";
 export const metadata: Metadata = {
   title: "关于",
   description:
-    `${siteConfig.name}（${siteConfig.shortName}）是一款免费在线 PDF 与图片处理工具，所有处理均在浏览器本地完成，无需上传文件，保护你的隐私。`,
+    `${siteConfig.name}（${siteConfig.shortName}）是一款免费在线 PDF、图片与设计工具，所有处理均在浏览器本地完成，无需上传文件，保护你的隐私。`,
 };
 
 export default function AboutPage() {
@@ -21,7 +21,9 @@ export default function AboutPage() {
           <h2 className="text-xl font-semibold text-gray-900 mb-3">项目介绍</h2>
           <p className="text-gray-600 leading-relaxed">
             {siteConfig.name}（{siteConfig.shortName}）是一个免费、无广告的在线办公工具集，
-            专注提供日常最常用的 PDF 与图片处理能力：PDF 合并、拆分、水印，图片压缩、格式转换、裁剪、缩放、扩展填充。
+            专注提供日常最常用的 PDF、图片与设计处理能力：
+            PDF 合并、拆分、水印；图片压缩、格式转换、裁剪、缩放、扩展填充；
+            以及取色器、颜色对比度检查等图像设计/计算工具。
             所有功能完全在浏览器中本地运行，文件不会上传到任何服务器。
           </p>
         </section>

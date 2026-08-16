@@ -20,6 +20,7 @@ dist/
 .vscode/
 .codebuddy/
 .tree/
+office-toolkit/dev-start.js
 
 # Debug
 npm-debug.log*
