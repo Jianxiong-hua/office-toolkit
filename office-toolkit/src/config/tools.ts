@@ -62,10 +62,21 @@ export const tools: ToolMeta[] = [
     id: "image-picker",
     name: "取色器",
     description: "从图片、屏幕或调色板取色，左右双区对比 HEX / RGB / HSL / HSV",
-    category: "image",
+    category: "design",
     path: "/tools/image/picker/",
     icon: "Pipette",
     tags: ["取色", "颜色", "色值", "RGB", "HSL"],
+  },
+
+  // --- 图像设计/计算工具 ---
+  {
+    id: "color-contrast",
+    name: "颜色对比度检查",
+    description: "WCAG 文字可见性预检：检查文字色与背景色的对比度、评级，支持经验学习与色觉模拟",
+    category: "design",
+    path: "/tools/design/contrast/",
+    icon: "Contrast",
+    tags: ["对比度", "WCAG", "可访问性", "颜色", "色觉模拟"],
   },
 
   // --- PDF 工具 ---
@@ -103,6 +114,7 @@ export const tools: ToolMeta[] = [
 export const toolsByCategory = {
   image: tools.filter((t) => t.category === "image"),
   pdf: tools.filter((t) => t.category === "pdf"),
+  design: tools.filter((t) => t.category === "design"),
 };
 
 export const getToolById = (id: string) => tools.find((t) => t.id === id);

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Image, FileText, Shield } from "lucide-react";
+import { ArrowRight, Image, FileText, Palette, Shield } from "lucide-react";
 import { toolsByCategory } from "@/config/tools";
 import { ToolCard } from "@/components/tools/ToolCard";
 
@@ -67,6 +67,26 @@ export default function HomePage() {
           </div>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {toolsByCategory.pdf.map((tool) => (
+              <ToolCard key={tool.id} tool={tool} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 图像设计/计算工具 */}
+      <section id="design-tools" className="bg-gray-50 py-16">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100">
+              <Palette className="h-5 w-5 text-purple-600" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">图像设计/计算工具</h2>
+              <p className="text-sm text-gray-500">取色、对比度检查、颜色分析</p>
+            </div>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {toolsByCategory.design.map((tool) => (
               <ToolCard key={tool.id} tool={tool} />
             ))}
           </div>

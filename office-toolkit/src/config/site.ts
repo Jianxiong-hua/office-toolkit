@@ -11,7 +11,7 @@ export const siteConfig = {
   },
 };
 
-export type ToolCategory = "image" | "pdf";
+export type ToolCategory = "image" | "pdf" | "design";
 
 export interface ToolMeta {
   id: string;
