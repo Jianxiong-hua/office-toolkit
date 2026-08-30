@@ -32,12 +32,12 @@ export const tools: ToolMeta[] = [
   },
   {
     id: "image-crop",
-    name: "图片快速裁剪",
-    description: "5 种固定比例，支持旋转、翻转，快速选定裁剪区域",
+    name: "图像旋转、镜像、裁剪",
+    description: "任意角度旋转、镜像翻转、多比例裁剪，支持同分辨率图片批量处理",
     category: "image",
     path: "/tools/image/crop/",
     icon: "Crop",
-    tags: ["裁剪", "图片", "尺寸"],
+    tags: ["裁剪", "旋转", "镜像", "批量", "图片", "尺寸"],
     featured: true,
   },
   {

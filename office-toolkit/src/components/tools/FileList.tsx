@@ -20,6 +20,9 @@ interface FileListProps {
   onPreview?: (id: string) => void;
   processingIds?: Set<string>;
   errorIds?: Map<string, string>;
+  /** 当前选中项；与 onSelect 一起用于「点击切换编辑目标」 */
+  selectedId?: string;
+  onSelect?: (id: string) => void;
 }
 
 export function FileList({
@@ -31,6 +34,8 @@ export function FileList({
   onPreview,
   processingIds,
   errorIds,
+  selectedId,
+  onSelect,
 }: FileListProps) {
   if (files.length === 0) return null;
 
@@ -40,11 +45,14 @@ export function FileList({
         const result = results?.get(file.id);
         const isProcessing = processingIds?.has(file.id);
         const error = errorIds?.get(file.id);
+        const isSelected = selectedId === file.id;
 
         return (
           <li
             key={file.id}
-            className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm"
+            className={`flex items-center gap-3 rounded-xl border bg-white p-3 shadow-sm ${
+              isSelected ? "border-brand-400 ring-1 ring-brand-100" : "border-gray-100"
+            }`}
           >
             {showPreview && file.preview ? (
               <img
@@ -58,7 +66,20 @@ export function FileList({
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-medium text-gray-900">{file.name}</p>
+              {onSelect ? (
+                <button
+                  type="button"
+                  onClick={() => onSelect(file.id)}
+                  title="点击切换为编辑目标"
+                  className={`block max-w-full truncate text-left text-sm font-medium transition-colors ${
+                    isSelected ? "text-brand-700" : "text-gray-900 hover:text-brand-600"
+                  }`}
+                >
+                  {file.name}
+                </button>
+              ) : (
+                <p className="truncate text-sm font-medium text-gray-900">{file.name}</p>
+              )}
               <p className="text-xs text-gray-400">
                 {formatFileSize(file.size)}
                 {result && (

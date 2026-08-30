@@ -18,7 +18,6 @@ dist/
 .DS_Store
 *.pem
 .vscode/
-.codebuddy/
 .tree/
 office-toolkit/dev-start.js
 
