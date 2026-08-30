@@ -17,6 +17,14 @@
 - ⚠️ PowerShell 下 `git commit -m "中文"` 会因 GBK 控制台编码乱码。必须用 UTF-8 文件写 message 再 `git commit -F <file>`（临时文件放 `.git/` 内，用完删）。
 - ⚠️ ssh-keygen 的 `-N ""` 在此环境不可靠，让用户手动交互生成、passphrase 回车留空。
 
+## 用户确认红线（2026-08-30 用户明确要求，最高优先级）
+以下操作**必须先给用户确认，不得擅自执行**（详见 `.codebuddy/rules/commit_rules.mdc`）：
+1. **版本号**任何变更（package.json、changelog 版本条目）——新增条目还是并入现有条目，由用户选。
+2. **changelog/history 文案**——标题、描述措辞要先展示原文等确认。
+3. **commit message**——写好全文等用户确认后才能 commit（"提交吧"≠可以跳过确认）。
+4. **push**——只在用户明确说 push/推送时执行；"提交"≠push。
+5. 站点对外文案（tools.ts、ToolLayout 标题描述、对外承诺）同理。
+
 ## 开发约定
 - **工具元信息单一来源**：`office-toolkit/src/config/tools.ts`（`name` / `description` / `tags` / `icon` / `featured`）。首页、导航、sitemap 都从这里读，改工具名必须同步它。
 - **每次功能变更都要在 `office-toolkit/src/app/changelog/page.tsx` 顶部追加新版本条目**（数组最新在前，version 递增，changes 用中文一句一条）。
