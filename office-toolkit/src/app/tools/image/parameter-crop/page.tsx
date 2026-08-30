@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Eye, RotateCcw } from "lucide-react";
+import { Download, RotateCcw, AlertCircle, X } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
+import { FileList, type FileResult } from "@/components/tools/FileList";
 import { ErrorAlert } from "@/components/common/ErrorAlert";
 import { ProcessProgress } from "@/components/common/ProcessProgress";
 import {
@@ -15,6 +16,7 @@ import {
   downloadBlob,
   formatFileSize,
   generateOutputFilename,
+  loadImage,
   readFileAsDataURL,
 } from "@/lib/file";
 import { AppError, type AppErrorCode, type FileItem } from "@/types";
@@ -150,8 +152,11 @@ function applyResize(
 }
 
 export default function ParameterCropPage() {
-  const [file, setFile] = useState<FileItem | null>(null);
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [dimensions, setDimensions] = useState<
+    Map<string, { width: number; height: number }>
+  >(new Map());
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [naturalW, setNaturalW] = useState(0);
   const [naturalH, setNaturalH] = useState(0);
   const [displayInfo, setDisplayInfo] = useState<DisplayInfo>({
@@ -165,38 +170,130 @@ export default function ParameterCropPage() {
   const [format, setFormat] = useState<CropOutputFormat>("original");
   const [quality, setQuality] = useState(92);
   const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<{
-    blob: Blob;
-    width: number;
-    height: number;
-  } | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [results, setResults] = useState<Map<string, FileResult>>(new Map());
   const [error, setError] = useState<{
     code?: AppErrorCode;
     message: string;
   } | null>(null);
+  /** 批量添加时分辨率不一致的提示 */
+  const [rejectMessage, setRejectMessage] = useState<string | null>(null);
+
+  const currentFile = files[currentIndex];
+  const imageSrc = currentFile?.preview ?? null;
+  const currentDimensions = currentFile
+    ? dimensions.get(currentFile.id)
+    : undefined;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
 
-  /** 选择文件后，读取为 Data URL 并展示 */
-  const handleFileAdded = useCallback(async (files: FileItem[]) => {
-    if (files.length === 0) return;
-    const item = files[0];
-    setError(null);
-    setResult(null);
-    setFile(item);
-    try {
-      const dataUrl = await readFileAsDataURL(item.file);
-      setImageSrc(dataUrl);
-    } catch {
-      setError({ code: "PROCESS_FAILED", message: "读取文件失败" });
-    }
-  }, []);
+  /**
+   * 批量添加：所有图片分辨率必须与第一张一致，否则拒绝加入并提示
+   */
+  const handleFilesAdded = useCallback(
+    async (newFiles: FileItem[]) => {
+      const withPreviews = await Promise.all(
+        newFiles.map(async (f) => {
+          if (f.type.startsWith("image/")) {
+            return { ...f, preview: await readFileAsDataURL(f.file) };
+          }
+          return f;
+        })
+      );
 
-  /** 清空当前选择，回到上传区 */
-  const handleRemove = useCallback(() => {
-    setFile(null);
-    setImageSrc(null);
+      const sizeEntries = await Promise.all(
+        withPreviews.map(async (f) => {
+          if (!f.preview) return null;
+          try {
+            const img = await loadImage(f.preview);
+            return {
+              id: f.id,
+              name: f.name,
+              width: img.naturalWidth,
+              height: img.naturalHeight,
+            };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      // 基准分辨率取「已有第一张」，没有则由本次第一张确定
+      let base = files[0] ? dimensions.get(files[0].id) : undefined;
+      const accepted: FileItem[] = [];
+      const acceptedSizes = new Map<string, { width: number; height: number }>();
+      const rejected: string[] = [];
+
+      withPreviews.forEach((f, i) => {
+        const size = sizeEntries[i];
+        if (!size) {
+          rejected.push(`${f.name}（无法读取分辨率）`);
+          return;
+        }
+        if (!base) {
+          base = { width: size.width, height: size.height };
+        } else if (size.width !== base.width || size.height !== base.height) {
+          rejected.push(`${f.name}（${size.width}×${size.height}）`);
+          return;
+        }
+        accepted.push(f);
+        acceptedSizes.set(f.id, { width: size.width, height: size.height });
+      });
+
+      if (accepted.length > 0) {
+        setFiles((prev) => [...prev, ...accepted]);
+        setDimensions((prev) => new Map([...prev, ...acceptedSizes]));
+        setResults(new Map());
+      }
+
+      if (rejected.length > 0) {
+        setRejectMessage(
+          `已忽略 ${rejected.length} 张图片：${rejected.join("、")}。批量处理要求所有图片分辨率与第一张一致${
+            base ? `（${base.width}×${base.height}）` : ""
+          }`
+        );
+      } else {
+        setRejectMessage(null);
+      }
+    },
+    [files, dimensions]
+  );
+
+  /** 删除单个文件 */
+  const handleRemove = useCallback(
+    (id: string) => {
+      const removedIndex = files.findIndex((f) => f.id === id);
+      if (removedIndex === -1) return;
+
+      const next = files.filter((f) => f.id !== id);
+      setFiles(next);
+      setDimensions((prev) => {
+        const map = new Map(prev);
+        map.delete(id);
+        return map;
+      });
+      setResults((prev) => {
+        const map = new Map(prev);
+        map.delete(id);
+        return map;
+      });
+
+      if (removedIndex < currentIndex) {
+        setCurrentIndex(currentIndex - 1);
+      } else if (removedIndex === currentIndex) {
+        setCurrentIndex(Math.max(0, Math.min(currentIndex, next.length - 1)));
+      }
+    },
+    [files, currentIndex]
+  );
+
+  /** 清空全部，回到上传区 */
+  const handleReselect = useCallback(() => {
+    setFiles([]);
+    setDimensions(new Map());
+    setResults(new Map());
+    setCurrentIndex(0);
     setNaturalW(0);
     setNaturalH(0);
     setDisplayInfo({
@@ -207,9 +304,18 @@ export default function ParameterCropPage() {
       offsetY: 0,
     });
     setRect({ x1: 0, y1: 0, x2: 0, y2: 0 });
-    setResult(null);
     setError(null);
+    setRejectMessage(null);
   }, []);
+
+  /** 在文件列表中切换当前编辑的图片 */
+  const handleSelectFile = useCallback(
+    (id: string) => {
+      const index = files.findIndex((f) => f.id === id);
+      if (index >= 0) setCurrentIndex(index);
+    },
+    [files]
+  );
 
   /** 读取原图原始像素尺寸 */
   useEffect(() => {
@@ -327,9 +433,9 @@ export default function ParameterCropPage() {
     setRect((prev) => ({ ...prev, [field]: v }));
   };
 
-  /** 执行裁剪 */
+  /** 执行裁剪：同一套坐标应用到所有图片 */
   const handleProcess = useCallback(async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     const w = rect.x2 - rect.x1;
     const h = rect.y2 - rect.y1;
     if (w <= 0 || h <= 0) {
@@ -337,19 +443,30 @@ export default function ParameterCropPage() {
       return;
     }
     setProcessing(true);
+    setProgress(0);
     setError(null);
-    setResult(null);
+    setResults(new Map());
     try {
-      const opts: CropByRegionOptions = {
-        x: rect.x1,
-        y: rect.y1,
-        width: w,
-        height: h,
-        format,
-        quality: quality / 100,
-      };
-      const res = await cropImageByRegion(file.file, opts);
-      setResult(res);
+      const next = new Map<string, FileResult>();
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const opts: CropByRegionOptions = {
+          x: rect.x1,
+          y: rect.y1,
+          width: w,
+          height: h,
+          format,
+          quality: quality / 100,
+        };
+        const res = await cropImageByRegion(f.file, opts);
+        next.set(f.id, {
+          blob: res.blob,
+          size: res.blob.size,
+          info: `→ ${res.width}×${res.height}`,
+        });
+        setProgress(Math.round(((i + 1) / files.length) * 100));
+      }
+      setResults(next);
     } catch (err) {
       if (err instanceof AppError) {
         setError({ code: err.code, message: err.message });
@@ -359,29 +476,53 @@ export default function ParameterCropPage() {
     } finally {
       setProcessing(false);
     }
-  }, [file, rect, format, quality]);
+  }, [files, rect, format, quality]);
 
-  /** 下载 */
-  const handleDownload = useCallback(() => {
-    if (!result || !file) return;
-    const ext = format === "original" ? undefined : format;
-    const name = generateOutputFilename(file.name, "cropped", ext);
-    downloadBlob(result.blob, name);
-  }, [result, file, format]);
+  /** 单个下载 */
+  const handleDownload = useCallback(
+    (id: string) => {
+      const result = results.get(id);
+      const file = files.find((f) => f.id === id);
+      if (!result || !file) return;
+      const ext = format === "original" ? undefined : format;
+      downloadBlob(result.blob, generateOutputFilename(file.name, "cropped", ext));
+    },
+    [results, files, format]
+  );
 
-  /** 预览 */
-  const handlePreview = useCallback(() => {
-    if (!result) return;
-    const url = URL.createObjectURL(result.blob);
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.write(
-        `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/><title>预览</title><style>html,body{margin:0;height:100%}body{background:#f3f4f6;display:flex;align-items:center;justify-content:center}img{max-width:96%;max-height:96vh;box-shadow:0 4px 24px rgba(0,0,0,.15);background:white}</style></head><body><img src="${url}"/></body></html>`
-      );
-      w.document.close();
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  }, [result]);
+  /** 单个预览 */
+  const handlePreview = useCallback(
+    (id: string) => {
+      const result = results.get(id);
+      const file = files.find((f) => f.id === id);
+      if (!result || !file) return;
+      const url = URL.createObjectURL(result.blob);
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(
+          `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/><title>${file.name}</title><style>html,body{margin:0;height:100%}body{background:#f3f4f6;display:flex;align-items:center;justify-content:center}img{max-width:96%;max-height:96vh;box-shadow:0 4px 24px rgba(0,0,0,.15);background:white}</style></head><body><img src="${url}"/></body></html>`
+        );
+        w.document.close();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    },
+    [results, files]
+  );
+
+  /** 打包下载全部结果 */
+  const handleDownloadAll = useCallback(async () => {
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    files.forEach((file) => {
+      const result = results.get(file.id);
+      if (result) {
+        const ext = format === "original" ? undefined : format;
+        zip.file(generateOutputFilename(file.name, "cropped", ext), result.blob);
+      }
+    });
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    downloadBlob(zipBlob, "cropped_images.zip");
+  }, [files, results, format]);
 
   // 当前裁剪框在容器中的几何参数（计算一次复用）
   const boxLeft = displayInfo.offsetX + rect.x1 * displayInfo.scale;
@@ -392,22 +533,34 @@ export default function ParameterCropPage() {
   return (
     <ToolLayout
       title="图片参数化裁剪"
-      description="通过拖动裁剪框或输入左上/右下坐标，精确指定裁剪区域"
+      description="通过拖动裁剪框或输入左上/右下坐标精确裁剪，支持同分辨率图片批量处理"
     >
       <div className="space-y-6">
-        {!file && (
-          <FileDropZone
-            accept={{
-              "image/png": [".png"],
-              "image/jpeg": [".jpg", ".jpeg"],
-              "image/webp": [".webp"],
-              "image/bmp": [".bmp"],
-              "image/gif": [".gif"],
-            }}
-            maxFiles={1}
-            onFilesAdded={handleFileAdded}
-            label="拖拽图片到此处，或点击选择（仅支持单张图片）"
-          />
+        <FileDropZone
+          accept={{
+            "image/png": [".png"],
+            "image/jpeg": [".jpg", ".jpeg"],
+            "image/webp": [".webp"],
+            "image/bmp": [".bmp"],
+            "image/gif": [".gif"],
+          }}
+          onFilesAdded={handleFilesAdded}
+          label="拖拽图片到此处，或点击选择（可继续添加，分辨率需一致）"
+        />
+
+        {rejectMessage && (
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="flex-1">{rejectMessage}</span>
+            <button
+              type="button"
+              onClick={() => setRejectMessage(null)}
+              className="shrink-0 rounded-md p-0.5 text-amber-500 hover:bg-amber-100"
+              title="关闭"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         )}
 
         {error && (
@@ -419,7 +572,18 @@ export default function ParameterCropPage() {
           />
         )}
 
-        {file && imageSrc && naturalW > 0 && (
+        <FileList
+          files={files}
+          onRemove={handleRemove}
+          showPreview
+          results={results}
+          onDownload={handleDownload}
+          onPreview={handlePreview}
+          selectedId={currentFile?.id}
+          onSelect={handleSelectFile}
+        />
+
+        {currentFile && imageSrc && naturalW > 0 && (
           <>
             {/* 文件信息条 */}
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-100 bg-white p-3">
@@ -436,10 +600,16 @@ export default function ParameterCropPage() {
                 </span>{" "}
                 像素
                 <span className="mx-2 text-gray-300">·</span>
-                {formatFileSize(file.size)}
+                {formatFileSize(currentFile.size)}
+                {files.length > 1 && (
+                  <>
+                    <span className="mx-2 text-gray-300">·</span>
+                    共 {files.length} 张，同一坐标应用到全部
+                  </>
+                )}
               </div>
               <button
-                onClick={handleRemove}
+                onClick={handleReselect}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -649,31 +819,28 @@ export default function ParameterCropPage() {
                 disabled={processing}
                 className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-medium text-white hover:bg-brand-700 transition-colors disabled:opacity-50"
               >
-                {processing ? "处理中..." : "裁剪"}
+                {processing
+                  ? "处理中..."
+                  : files.length > 1
+                    ? `裁剪全部 ${files.length} 张`
+                    : "裁剪"}
               </button>
-              {result && (
-                <>
-                  <button
-                    onClick={handlePreview}
-                    className="inline-flex items-center gap-2 rounded-xl border-2 border-blue-500 bg-blue-50 px-5 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
-                  >
-                    <Eye className="h-5 w-5" />
-                    预览 ({result.width}×{result.height})
-                  </button>
-                  <button
-                    onClick={handleDownload}
-                    className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-6 py-3 text-sm font-medium text-white hover:bg-green-700 transition-colors shadow-lg shadow-green-200"
-                  >
-                    <Download className="h-5 w-5" />
-                    下载
-                  </button>
-                </>
+              {results.size > 0 && (
+                <button
+                  onClick={handleDownloadAll}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-5 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <Download className="h-4 w-4" />
+                  打包下载
+                </button>
               )}
             </div>
           </>
         )}
 
-        {processing && <ProcessProgress message="正在裁剪..." />}
+        {processing && (
+          <ProcessProgress message="正在裁剪图片..." progress={progress} />
+        )}
       </div>
     </ToolLayout>
   );

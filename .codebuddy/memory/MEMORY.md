@@ -8,8 +8,14 @@
 - 依赖安装在 `office-toolkit/` 下：`cd 'd:/AI agent/AI coding/office-toolkit/office-toolkit'; npm install`
 - 类型检查：`npm run validate`（tsc --noEmit）；构建：`npm run build`
 - 起服务：`npx next dev --port 3000`。注意 `npm run dev -- -p 3000` 会把 `3000` 当成目录参数而失败。
+- dev server 可能假死（端口监听但不响应）：`taskkill /PID <pid> /F /T` 后重启。
 - `cd` 到含空格路径必须用单引号包裹。
 - PowerShell 里不要用 `curl`（别名指向 Invoke-WebRequest），用 `Invoke-WebRequest -Uri ... -UseBasicParsing`。
+
+## Git（SSH 已配好）
+- 远端为 SSH：`git@github.com:Jianxiong-hua/office-toolkit.git`；key `C:\Users\hao\.ssh\id_ed25519`（无 passphrase），GitHub 账号 Jianxiong-hua，push/pull 免密。
+- ⚠️ PowerShell 下 `git commit -m "中文"` 会因 GBK 控制台编码乱码。必须用 UTF-8 文件写 message 再 `git commit -F <file>`（临时文件放 `.git/` 内，用完删）。
+- ⚠️ ssh-keygen 的 `-N ""` 在此环境不可靠，让用户手动交互生成、passphrase 回车留空。
 
 ## 开发约定
 - **工具元信息单一来源**：`office-toolkit/src/config/tools.ts`（`name` / `description` / `tags` / `icon` / `featured`）。首页、导航、sitemap 都从这里读，改工具名必须同步它。
