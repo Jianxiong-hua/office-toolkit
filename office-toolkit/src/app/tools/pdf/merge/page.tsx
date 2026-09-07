@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { ArrowUp, ArrowDown, Trash2, FileText, Image as ImageIcon, Eye } from "lucide-react";
+import { ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Trash2, FileText, Image as ImageIcon, Eye, RotateCcw } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
@@ -37,6 +37,35 @@ export default function PdfMergePage() {
 
   const handleRemove = useCallback((id: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id));
+    setResultBlob(null);
+  }, []);
+
+  // 重新选择：清空所有文件与结果
+  const handleReselect = useCallback(() => {
+    setFiles([]);
+    setResultBlob(null);
+    setError(null);
+  }, []);
+
+  const handleMoveToStart = useCallback((index: number) => {
+    if (index === 0) return;
+    setFiles((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(index, 1);
+      next.unshift(item);
+      return next;
+    });
+    setResultBlob(null);
+  }, []);
+
+  const handleMoveToEnd = useCallback((index: number) => {
+    setFiles((prev) => {
+      if (index >= prev.length - 1) return prev;
+      const next = [...prev];
+      const [item] = next.splice(index, 1);
+      next.push(item);
+      return next;
+    });
     setResultBlob(null);
   }, []);
 
@@ -139,6 +168,13 @@ export default function PdfMergePage() {
               <h3 className="font-semibold text-gray-900">
                 文件列表 ({files.length} 个文件，共 {formatFileSize(totalSize)})
               </h3>
+              <button
+                onClick={handleReselect}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                重新选择
+              </button>
             </div>
 
             <ul className="space-y-2">
@@ -171,9 +207,18 @@ export default function PdfMergePage() {
                   
                   <div className="flex items-center gap-0.5">
                     <button
+                      onClick={() => handleMoveToStart(index)}
+                      disabled={index === 0}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 disabled:opacity-30 transition-colors"
+                      title="置于最前"
+                    >
+                      <ChevronsUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
                       onClick={() => handleMoveUp(index)}
                       disabled={index === 0}
                       className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 disabled:opacity-30 transition-colors"
+                      title="上移"
                     >
                       <ArrowUp className="h-3.5 w-3.5" />
                     </button>
@@ -181,12 +226,22 @@ export default function PdfMergePage() {
                       onClick={() => handleMoveDown(index)}
                       disabled={index === files.length - 1}
                       className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 disabled:opacity-30 transition-colors"
+                      title="下移"
                     >
                       <ArrowDown className="h-3.5 w-3.5" />
                     </button>
                     <button
+                      onClick={() => handleMoveToEnd(index)}
+                      disabled={index === files.length - 1}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 disabled:opacity-30 transition-colors"
+                      title="置于最后"
+                    >
+                      <ChevronsDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button
                       onClick={() => handleRemove(file.id)}
                       className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors ml-1"
+                      title="删除"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -286,7 +341,7 @@ export default function PdfMergePage() {
               <li>• 支持合并多个 PDF 和图片文件（PNG、JPG、WebP）</li>
               <li>• 图片会自动转换为单页 PDF</li>
               <li>• 单个文件最大 50MB，批量总大小不超过 500MB</li>
-              <li>• 通过箭头按钮调整文件合并顺序</li>
+              <li>• 通过「置于最前/最后」或上下箭头按钮调整文件合并顺序</li>
               <li>• 所有处理在浏览器本地完成，文件不会上传到服务器</li>
             </ul>
           </div>

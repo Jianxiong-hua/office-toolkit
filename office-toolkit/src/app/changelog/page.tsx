@@ -16,6 +16,16 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    version: "1.6.1",
+    date: "2026-09",
+    title: "多文件体验优化",
+    changes: [
+      "多文件上传不再限制 20 个文件",
+      "PDF 合并新增「重新选择」：一键清空全部文件，无需逐个删除",
+      "PDF 合并排序新增「置于最前」和「置于最后」按钮",
+    ],
+  },
+  {
     version: "1.6.0",
     date: "2026-08",
     title: "「图片快速裁剪」升级为「图像旋转、镜像、裁剪」，参数化裁剪支持批量",

@@ -7,7 +7,9 @@
 ## 命令与环境（Windows / PowerShell）
 - 依赖安装在 `office-toolkit/` 下：`cd 'd:/AI agent/AI coding/office-toolkit/office-toolkit'; npm install`
 - 类型检查：`npm run validate`（tsc --noEmit）；构建：`npm run build`
-- 起服务：`npx next dev --port 3000`。注意 `npm run dev -- -p 3000` 会把 `3000` 当成目录参数而失败。
+- 起服务（**用户 2026-09-08 确认的标准方式，以后都按此启动**）：在 `office-toolkit/` 子目录后台执行 `npm run dev`（默认端口 3000）。PowerShell 写法：
+  `Set-Location '<项目>/office-toolkit'; Start-Process -FilePath "npm.cmd" -ArgumentList "run dev" -WindowStyle Hidden`
+  然后用 `curl.exe http://localhost:3000` 验证 200。不要用 `npm run dev -- -p 3000`（追加参数会把 `3000` 当成目录参数而失败）。
 - dev server 可能假死（端口监听但不响应）：`taskkill /PID <pid> /F /T` 后重启。
 - `cd` 到含空格路径必须用单引号包裹。
 - PowerShell 里不要用 `curl`（别名指向 Invoke-WebRequest），用 `Invoke-WebRequest -Uri ... -UseBasicParsing`。
@@ -24,6 +26,9 @@
 3. **commit message**——写好全文等用户确认后才能 commit（"提交吧"≠可以跳过确认）。
 4. **push**——只在用户明确说 push/推送时执行；"提交"≠push。
 5. 站点对外文案（tools.ts、ToolLayout 标题描述、对外承诺）同理。
+
+## 测试卫生约定（2026-09-08 用户提出）
+凡涉及测试的环节，测试完成后必须**清理测试脚本和中间产物**（临时文件、生成的样例文件等），保持工作区不被污染。
 
 ## 开发约定
 - **工具元信息单一来源**：`office-toolkit/src/config/tools.ts`（`name` / `description` / `tags` / `icon` / `featured`）。首页、导航、sitemap 都从这里读，改工具名必须同步它。

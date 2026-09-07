@@ -26,7 +26,7 @@ const FORMAT_LABELS: Record<string, string> = {
 
 export function FileDropZone({
   accept,
-  maxFiles = 20,
+  maxFiles = Infinity,
   maxSize = 100 * 1024 * 1024,
   onFilesAdded,
   onRejected,
