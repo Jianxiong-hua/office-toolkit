@@ -29,6 +29,13 @@ interface SplitResult {
   format: PagesOutputFormat;
 }
 
+/**
+ * PNG 输出分辨率档位
+ * PDF 中 1 pt = 1/72 inch，故等效 DPI = scale × 72
+ */
+const PNG_SCALE_OPTIONS = [1, 2, 3, 4, 6, 8];
+const DEFAULT_PNG_SCALE = 2;
+
 export default function PdfSplitPage() {
   const [file, setFile] = useState<FileItem | null>(null);
   const [totalPages, setTotalPages] = useState<number>(0);
@@ -36,6 +43,7 @@ export default function PdfSplitPage() {
   const [rangeInput, setRangeInput] = useState("");
   const [interval, setInterval] = useState(1);
   const [pagesFormat, setPagesFormat] = useState<PagesOutputFormat>("pdf");
+  const [pngScale, setPngScale] = useState<number>(DEFAULT_PNG_SCALE);
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState<SplitResult[]>([]);
   const [error, setError] = useState<{ code?: AppErrorCode; message: string } | null>(null);
@@ -88,7 +96,7 @@ export default function PdfSplitPage() {
         format = pagesFormat;
         splitResults =
           pagesFormat === "png"
-            ? await extractPDFPagesAsPng(buffer)
+            ? await extractPDFPagesAsPng(buffer, pngScale)
             : await extractPDFPages(buffer);
       }
 
@@ -115,7 +123,7 @@ export default function PdfSplitPage() {
     } finally {
       setProcessing(false);
     }
-  }, [file, totalPages, mode, rangeInput, interval, pagesFormat]);
+  }, [file, totalPages, mode, rangeInput, interval, pagesFormat, pngScale]);
 
   const handleDownload = useCallback((blob: Blob, name: string) => {
     downloadBlob(blob, name);
@@ -276,9 +284,40 @@ export default function PdfSplitPage() {
                     <span className="text-sm text-gray-700">单页 PNG 图片</span>
                   </label>
                 </div>
+                {pagesFormat === "png" && (
+                  <div className="rounded-md border border-gray-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <span className="text-sm font-medium text-gray-700">图片分辨率：</span>
+                      {PNG_SCALE_OPTIONS.map((scale) => (
+                        <label key={scale} className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="png-scale"
+                            value={scale}
+                            checked={pngScale === scale}
+                            onChange={() => setPngScale(scale)}
+                            className="h-3.5 w-3.5 accent-brand-600"
+                          />
+                          <span className="text-sm text-gray-700">
+                            ×{scale}（{scale * 72} DPI）
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-gray-400">
+                      以 A4 页面为例，当前档位单页约输出{" "}
+                      {Math.floor(595 * pngScale)} × {Math.floor(842 * pngScale)} px
+                      {pngScale >= 6 && (
+                        <span className="text-amber-600">
+                          ，分辨率较高，页数较多时处理时间与内存占用会明显增加
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
                 <p className="text-xs text-gray-400">
                   {pagesFormat === "png"
-                    ? "提示：每页导出为一张高清晰度 PNG 图片（适合打印或编辑）"
+                    ? "提示：每页导出为一张 PNG 图片（适合打印或编辑）"
                     : "提示：每页输出为独立的单页 PDF 文件"}
                 </p>
               </div>

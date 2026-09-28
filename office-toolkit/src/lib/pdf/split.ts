@@ -136,6 +136,10 @@ export async function extractPDFPages(
  * 把 PDF 每一页渲染为 PNG 图片
  * 使用 pdfjs-dist 在浏览器中渲染
  * 禁用 Worker 避免 Next.js 静态导出/开发环境下的 worker 路径问题
+ *
+ * @param scale 渲染倍率，决定输出图片分辨率：pdfjs 中 1 pt = 1/72 inch，
+ *   故等效 DPI = scale × 72（如 scale=2 → 144 DPI）。倍率越大图片越清晰，
+ *   但单页画布内存占用按倍率平方增长，高倍率处理多页 PDF 时需留意内存。
  */
 export async function extractPDFPagesAsPng(
   buffer: ArrayBuffer,

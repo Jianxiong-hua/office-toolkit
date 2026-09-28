@@ -16,6 +16,15 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    version: "1.6.2",
+    date: "2026-09",
+    title: "PDF 拆分导出 PNG 支持自定义分辨率",
+    changes: [
+      "「逐页提取」选择 PNG 格式时新增图片分辨率档位：×1 / ×2 / ×3 / ×4 / ×6 / ×8（对应 72 / 144 / 216 / 288 / 432 / 576 DPI），默认 ×2（144 DPI）",
+      "档位下方实时显示以 A4 页面为例的单页输出像素，×6 及以上档位额外提示处理时间与内存占用会增加",
+    ],
+  },
+  {
     version: "1.6.1",
     date: "2026-09",
     title: "多文件体验优化",
