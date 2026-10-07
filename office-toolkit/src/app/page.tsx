@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Image, FileText, Palette, Shield } from "lucide-react";
+import { ArrowRight, Image, FileText, Palette, Shield, FolderOpen } from "lucide-react";
 import { toolsByCategory } from "@/config/tools";
 import { ToolCard } from "@/components/tools/ToolCard";
 
@@ -87,6 +87,26 @@ export default function HomePage() {
           </div>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {toolsByCategory.design.map((tool) => (
+              <ToolCard key={tool.id} tool={tool} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 文档与文件工具 */}
+      <section id="file-tools" className="bg-gray-50 py-16">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
+              <FolderOpen className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">文档与文件工具</h2>
+              <p className="text-sm text-gray-500">二进制查看、文档对比</p>
+            </div>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {toolsByCategory.file.map((tool) => (
               <ToolCard key={tool.id} tool={tool} />
             ))}
           </div>

@@ -109,12 +109,25 @@ export const tools: ToolMeta[] = [
     tags: ["水印", "PDF", "文字", "图片"],
     featured: true,
   },
+
+  // --- 文档与文件工具 ---
+  {
+    id: "file-bin-viewer",
+    name: "二进制查看器",
+    description: "在线查看二进制文件内容，Hex 字节、ASCII 字符、偏移跳转与字节搜索",
+    category: "file",
+    path: "/tools/file/bin-viewer/",
+    icon: "Binary",
+    tags: ["二进制", "Hex", "字节", "查看", "搜索"],
+    featured: true,
+  },
 ];
 
 export const toolsByCategory = {
   image: tools.filter((t) => t.category === "image"),
   pdf: tools.filter((t) => t.category === "pdf"),
   design: tools.filter((t) => t.category === "design"),
+  file: tools.filter((t) => t.category === "file"),
 };
 
 export const getToolById = (id: string) => tools.find((t) => t.id === id);

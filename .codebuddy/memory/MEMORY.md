@@ -60,4 +60,13 @@
 ## 技术要点
 - **react-easy-crop**：`onCropComplete` 给的 `croppedAreaPixels` 是**旋转后外接矩形**（`rotateSize(naturalW, naturalH, rotation)`）坐标系的像素，不是原图坐标系。任意角度旋转必须先「镜像→旋转」绘制到外接矩形 canvas，再按 crop 区域取像素；输出尺寸恒等于 crop.width × crop.height。
 - Cropper 组件不支持 flipX/flipY，镜像需预处理图片为 dataURL 再传给 `image`。
-- `lucide-react` 提供图标；`tools.ts` 里 icon 是图标名字符串。
+- `lucide-react` 提供图标；`tools.ts` 里 icon 是图标名字符串。**写错 icon 名不会报错**，`ToolCard` 会静默回退成 `Wrench` 扳手图标，新增工具时务必 grep 校验图标真实存在。
+
+## 结构性陷阱（2026-10-08 踩坑后补充）
+- **通用 `FileDropZone` 无法接受任意文件类型**：它基于 react-dropzone，accept 最终走 npm 包 `attr-accept`，该包对空数组 `.some()` 恒为 false，即传 `accept={{}}` 会**拒绝所有文件**。需要「任意类型」时只能自研 input + 拖拽组件。
+- **大文件文本视图必须虚拟滚动**：20MB / 16 字节每行 = 1,310,720 行，一次性渲染直接卡死。自研固定行高 windowing 约 40 行即可，无需引依赖；行高常量与 JSX 行内样式必须一致，否则像素换算错位。
+- **新增工具分类要改 4 处硬编码**：`config/site.ts` 的 `ToolCategory` → `config/tools.ts` 的 `toolsByCategory` → 首页 `app/page.tsx` 的**手写** `<section>`（不是遍历渲染）→ `components/tools/ToolCard.tsx` 的 `categoryColors` 与 `categoryIconBg` 两张表。漏改不报错，只会静默回退成灰色卡片。
+
+## 工作日志
+- `2026-08-29.md` / `2026-08-30.md`（用户红线）/ `2026-09-08.md`（测试卫生）/ `2026-09-28.md`（PDF 拆分导出倍率）
+- `2026-10-08.md`——三批新工具规划（bin 查看器 / 图片编辑 / 文档对比）、新增 `file` 分类、搜索模式消歧踩坑

@@ -7,12 +7,14 @@ const categoryColors: Record<string, string> = {
   image: "bg-green-100 text-green-600",
   pdf: "bg-red-100 text-red-600",
   design: "bg-purple-100 text-purple-600",
+  file: "bg-amber-100 text-amber-600",
 };
 
 const categoryIconBg: Record<string, string> = {
   image: "bg-green-50 group-hover:bg-green-100",
   pdf: "bg-red-50 group-hover:bg-red-100",
   design: "bg-purple-50 group-hover:bg-purple-100",
+  file: "bg-amber-50 group-hover:bg-amber-100",
 };
 
 export function ToolCard({ tool }: { tool: ToolMeta }) {
