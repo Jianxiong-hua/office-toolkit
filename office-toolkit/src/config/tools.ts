@@ -59,6 +59,16 @@ export const tools: ToolMeta[] = [
     tags: ["填充", "扩展", "Padding", "图片"],
   },
   {
+    id: "image-edit",
+    name: "图片编辑",
+    description: "在图片上画线画框做标注，调节亮度、对比度、色温、色调，本地导出",
+    category: "image",
+    path: "/tools/image/edit/",
+    icon: "SlidersHorizontal",
+    tags: ["图片编辑", "标注", "画框", "亮度", "对比度", "色温"],
+    featured: true,
+  },
+  {
     id: "image-picker",
     name: "取色器",
     description: "从图片、屏幕或调色板取色，左右双区对比 HEX / RGB / HSL / HSV",

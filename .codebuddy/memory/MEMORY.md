@@ -62,11 +62,15 @@
 - Cropper 组件不支持 flipX/flipY，镜像需预处理图片为 dataURL 再传给 `image`。
 - `lucide-react` 提供图标；`tools.ts` 里 icon 是图标名字符串。**写错 icon 名不会报错**，`ToolCard` 会静默回退成 `Wrench` 扳手图标，新增工具时务必 grep 校验图标真实存在。
 
-## 结构性陷阱（2026-10-08 踩坑后补充）
+## 结构性陷阱（2026-10-08 踩坑后补充，2026-10-11 增补）
 - **通用 `FileDropZone` 无法接受任意文件类型**：它基于 react-dropzone，accept 最终走 npm 包 `attr-accept`，该包对空数组 `.some()` 恒为 false，即传 `accept={{}}` 会**拒绝所有文件**。需要「任意类型」时只能自研 input + 拖拽组件。
 - **大文件文本视图必须虚拟滚动**：20MB / 16 字节每行 = 1,310,720 行，一次性渲染直接卡死。自研固定行高 windowing 约 40 行即可，无需引依赖；行高常量与 JSX 行内样式必须一致，否则像素换算错位。
 - **新增工具分类要改 4 处硬编码**：`config/site.ts` 的 `ToolCategory` → `config/tools.ts` 的 `toolsByCategory` → 首页 `app/page.tsx` 的**手写** `<section>`（不是遍历渲染）→ `components/tools/ToolCard.tsx` 的 `categoryColors` 与 `categoryIconBg` 两张表。漏改不报错，只会静默回退成灰色卡片。
+- **dev server 运行中严禁跑 `npm run build`**：build 重写 `.next`，dev 的 chunk 全部 404，页面变无样式裸 HTML。build 后必须重启 dev。
+- **React StrictMode 下 setState 的 updater 会被双调用**：updater 内嵌套其他 setState 会被执行两次（撤销栈重复推入）。副作用移出 updater，改直接读闭包值。
+- **canvas 查看器滚轮缩放**：尺寸与滚动必须在 wheel 事件内同步写 DOM（rAF 调 scroll 会跑在 React 提交前，产生闪烁中间帧）；ResizeObserver 只更新 fitScaleRef，不能重置当前缩放（否则放大被拉回 fit，表现为放大无效）。
 
 ## 工作日志
 - `2026-08-29.md` / `2026-08-30.md`（用户红线）/ `2026-09-08.md`（测试卫生）/ `2026-09-28.md`（PDF 拆分导出倍率）
 - `2026-10-08.md`——三批新工具规划（bin 查看器 / 图片编辑 / 文档对比）、新增 `file` 分类、搜索模式消歧踩坑
+- `2026-10-11.md`——图片编辑器 v1+v2（像素调整/标注/缩放/文本）、dev-build 冲突、StrictMode updater、缩放闪烁与放大失效、工具故障绕行
