@@ -69,8 +69,11 @@
 - **dev server 运行中严禁跑 `npm run build`**：build 重写 `.next`，dev 的 chunk 全部 404，页面变无样式裸 HTML。build 后必须重启 dev。
 - **React StrictMode 下 setState 的 updater 会被双调用**：updater 内嵌套其他 setState 会被执行两次（撤销栈重复推入）。副作用移出 updater，改直接读闭包值。
 - **canvas 查看器滚轮缩放**：尺寸与滚动必须在 wheel 事件内同步写 DOM（rAF 调 scroll 会跑在 React 提交前，产生闪烁中间帧）；ResizeObserver 只更新 fitScaleRef，不能重置当前缩放（否则放大被拉回 fit，表现为放大无效）。
+- **dev 重启前跑过 build 会卡死 dev 启动**：.next 的 build 产物文件数超过 IDE node safe-delete 钩子的批量阈值（500），predev 的 rmSync 被拦而抛错，端口不监听。先手动 Remove-Item .next 再启动。
+- **execute_command 写源码时转义序列会变形**：参数中的 `\r\n` 等经链路变成双反斜杠字面。TS 源码里的转义用 String.fromCharCode 拼接；纯函数断言脚本放 .git/ 下临时目录跑。
 
 ## 工作日志
 - `2026-08-29.md` / `2026-08-30.md`（用户红线）/ `2026-09-08.md`（测试卫生）/ `2026-09-28.md`（PDF 拆分导出倍率）
 - `2026-10-08.md`——三批新工具规划（bin 查看器 / 图片编辑 / 文档对比）、新增 `file` 分类、搜索模式消歧踩坑
 - `2026-10-11.md`——图片编辑器 v1+v2（像素调整/标注/缩放/文本）、dev-build 冲突、StrictMode updater、缩放闪烁与放大失效、工具故障绕行
+- `2026-10-12.md`——文档对比（Hirschberg diff、编码回退、并排双栏）、分割公式 bug、predev 被安全钩子拦截

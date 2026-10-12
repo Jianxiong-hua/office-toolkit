@@ -131,6 +131,15 @@ export const tools: ToolMeta[] = [
     tags: ["二进制", "Hex", "字节", "查看", "搜索"],
     featured: true,
   },
+  {
+    id: "file-doc-compare",
+    name: "文档对比",
+    description: "打开查看 docx、txt、md 文档，并排对比两份文档的行级差异",
+    category: "file",
+    path: "/tools/file/doc-compare/",
+    icon: "Columns2",
+    tags: ["文档对比", "diff", "docx", "txt", "md"],
+  },
 ];
 
 export const toolsByCategory = {
