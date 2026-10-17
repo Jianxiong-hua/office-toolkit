@@ -119,6 +119,28 @@ export async function splitPDFByInterval(
 }
 
 /**
+ * 把多个页码范围的页面提取并合并为一个 PDF（保持输入顺序展开页索引）。
+ * 语义上等价于「先按范围拆分、再把结果合并」，但单次 copyPages 一步完成，
+ * 无需落地中间文件。用于拆分工具的「将指定页面提取到一个 pdf 文档中」选项。
+ */
+export async function extractPagesAsOnePdf(
+  buffer: ArrayBuffer,
+  ranges: SplitRange[]
+): Promise<Uint8Array> {
+  const sourcePdf = await PDFDocument.load(buffer, { ignoreEncryption: true });
+  const newPdf = await PDFDocument.create();
+  const pageIndices = ranges.flatMap((range) =>
+    Array.from({ length: range.end - range.start + 1 }, (_, i) => range.start - 1 + i)
+  );
+  if (pageIndices.length === 0) {
+    throw new AppError("INVALID_INPUT", "没有可提取的页面");
+  }
+  const copiedPages = await newPdf.copyPages(sourcePdf, pageIndices);
+  copiedPages.forEach((page) => newPdf.addPage(page));
+  return newPdf.save();
+}
+
+/**
  * 提取单页
  */
 export async function extractPDFPages(

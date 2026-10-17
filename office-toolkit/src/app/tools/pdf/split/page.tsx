@@ -14,6 +14,7 @@ import {
   splitPDFByInterval,
   extractPDFPages,
   extractPDFPagesAsPng,
+  extractPagesAsOnePdf,
 } from "@/lib/pdf/split";
 import { readFileAsArrayBuffer, downloadBlob, formatFileSize } from "@/lib/file";
 import { AppError, type AppErrorCode } from "@/types";
@@ -44,8 +45,11 @@ export default function PdfSplitPage() {
   const [interval, setInterval] = useState(1);
   const [pagesFormat, setPagesFormat] = useState<PagesOutputFormat>("pdf");
   const [pngScale, setPngScale] = useState<number>(DEFAULT_PNG_SCALE);
+  /** 「将指定页面提取到一个 pdf 文档中」复选框（仅页码范围模式显示） */
+  const [mergeExtracted, setMergeExtracted] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState<SplitResult[]>([]);
+  const [mergedResult, setMergedResult] = useState<SplitResult | null>(null);
   const [error, setError] = useState<{ code?: AppErrorCode; message: string } | null>(null);
 
   const handleFileAdded = useCallback(async (newFiles: FileItem[]) => {
@@ -53,6 +57,7 @@ export default function PdfSplitPage() {
     const target = newFiles[0];
     setFile(target);
     setResults([]);
+    setMergedResult(null);
     setError(null);
 
     try {
@@ -72,8 +77,10 @@ export default function PdfSplitPage() {
     setFile(null);
     setTotalPages(0);
     setResults([]);
+    setMergedResult(null);
     setError(null);
     setRangeInput("");
+    setMergeExtracted(false);
   }, []);
 
   const handleSplit = useCallback(async () => {
@@ -81,11 +88,29 @@ export default function PdfSplitPage() {
     setProcessing(true);
     setError(null);
     setResults([]);
+    setMergedResult(null);
 
     try {
       const buffer = await readFileAsArrayBuffer(file.file);
       let splitResults: { bytes: Uint8Array; range: { start: number; end: number } }[] = [];
       let format: PagesOutputFormat = "pdf";
+
+      if (mode === "range" && mergeExtracted) {
+        // 提取到一个 PDF：等价于先按范围拆分再合并，单次 copyPages 一步完成
+        const ranges = parsePageRanges(rangeInput, totalPages);
+        const bytes = await extractPagesAsOnePdf(buffer, ranges);
+        const baseName = file.name.replace(/\.pdf$/i, "");
+        const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
+        setMergedResult({
+          blob,
+          name: `${baseName}_extracted.pdf`,
+          range: ranges
+            .map((r) => (r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`))
+            .join(", "),
+          format: "pdf",
+        });
+        return;
+      }
 
       if (mode === "range") {
         const ranges = parsePageRanges(rangeInput, totalPages);
@@ -123,7 +148,7 @@ export default function PdfSplitPage() {
     } finally {
       setProcessing(false);
     }
-  }, [file, totalPages, mode, rangeInput, interval, pagesFormat, pngScale]);
+  }, [file, totalPages, mode, rangeInput, mergeExtracted, interval, pagesFormat, pngScale]);
 
   const handleDownload = useCallback((blob: Blob, name: string) => {
     downloadBlob(blob, name);
@@ -238,6 +263,17 @@ export default function PdfSplitPage() {
                 <p className="mt-1 text-xs text-gray-400">
                   支持格式：1-3, 5, 8-10（使用英文逗号分隔）
                 </p>
+                <label className="mt-2 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={mergeExtracted}
+                    onChange={(e) => setMergeExtracted(e.target.checked)}
+                    className="h-4 w-4 accent-brand-600"
+                  />
+                  <span className="text-sm text-gray-700">
+                    将指定页面提取到一个 pdf 文档中
+                  </span>
+                </label>
               </div>
             )}
 
@@ -334,6 +370,32 @@ export default function PdfSplitPage() {
 
         {processing && (
           <ProcessProgress message="正在拆分 PDF，请稍候..." />
+        )}
+
+        {mergedResult && (
+          <div className="rounded-2xl border border-green-100 bg-green-50 p-6 animate-fade-in space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-green-800">提取完成</h3>
+                <p className="text-xs text-green-700">
+                  {mergedResult.name} · 提取页：{mergedResult.range} ·{" "}
+                  {formatFileSize(mergedResult.blob.size)}
+                </p>
+              </div>
+              <button
+                onClick={() => handleDownload(mergedResult.blob, mergedResult.name)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+              >
+                <Download className="h-4 w-4" />
+                下载
+              </button>
+            </div>
+            <iframe
+              src={URL.createObjectURL(mergedResult.blob)}
+              title="PDF 预览"
+              className="h-[60vh] w-full rounded-lg border border-green-200 bg-white"
+            />
+          </div>
         )}
 
         {results.length > 0 && (

@@ -1,7 +1,17 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { DASH_ARRAYS, TEXT_LINE_HEIGHT, type Annotation, type AnnotationTool, type TextAnnotation } from "./types";
+import { useEffect, useRef, useState } from "react";
+import {
+  DASH_ARRAYS,
+  DEFAULT_FILL_OPACITY,
+  MEASURE_COLOR,
+  MEASURE_LABEL_SIZE,
+  TEXT_LINE_HEIGHT,
+  type Annotation,
+  type AnnotationTool,
+  type MeasureAnnotation,
+  type TextAnnotation,
+} from "./types";
 
 type DragMode =
   | { kind: "move"; id: number; startX: number; startY: number; orig: Annotation }
@@ -16,6 +26,9 @@ interface AnnotationCanvasProps {
   strokeWidth: number;
   dash: "solid" | "dashed" | "dashdot";
   fontSize: number;
+  /** 新建矩形的默认填充色与不透明度（0-1） */
+  fillColor: string;
+  fillOpacity: number;
   /** 当前内容显示缩放（fit × zoom），用于让手柄视觉大小恒定 */
   displayScale: number;
   selectedId: number | null;
@@ -30,11 +43,24 @@ interface AnnotationCanvasProps {
   /** 文本：单击创建锚点、双击重编辑 */
   onTextCreate: (x: number, y: number) => void;
   onTextEdit: (id: number) => void;
+  /** 裁剪模式：拖出选区后提交（原图像素坐标） */
+  onCropSelect: (rect: { x1: number; y1: number; x2: number; y2: number }) => void;
+  /** 已确认待应用的裁剪选区（渲染遮罩与虚线框） */
+  cropRect: { x1: number; y1: number; x2: number; y2: number } | null;
 }
 
 /** 手柄视觉大小恒定：viewBox 坐标系下除以显示缩放 */
 const handleR = (displayScale: number) => 6 / Math.max(displayScale, 0.0001);
 
+/** 测量线标签内容：两端坐标 + 欧氏距离（像素）。SVG 与 canvas 导出共用同一格式 */
+export function measureLabel(a: MeasureAnnotation): string {
+  const x1 = Math.round(a.x1);
+  const y1 = Math.round(a.y1);
+  const x2 = Math.round(a.x2);
+  const y2 = Math.round(a.y2);
+  const d = Math.round(Math.hypot(a.x2 - a.x1, a.y2 - a.y1));
+  return "(" + x1 + "," + y1 + ") -> (" + x2 + "," + y2 + ") · " + d + " px";
+}
 function shapeTouches(a: Annotation, x: number, y: number, displayScale: number): boolean {
   const slack = 8 / Math.max(displayScale, 0.0001);
   if (a.type === "text") {
@@ -58,6 +84,8 @@ export function AnnotationCanvas({
   strokeWidth,
   dash,
   fontSize,
+  fillColor,
+  fillOpacity,
   displayScale,
   selectedId,
   onSelect,
@@ -67,11 +95,18 @@ export function AnnotationCanvas({
   onDragEnd,
   onTextCreate,
   onTextEdit,
+  onCropSelect,
+  cropRect,
 }: AnnotationCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [draft, setDraft] = useState<Annotation | null>(null);
   const dragRef = useRef<DragMode | null>(null);
   const [dragging, setDragging] = useState(false);
+
+  // 切换工具时丢弃草稿：避免「按住拖动中切到别的工具再松手」把上一个工具的草稿误创建为标注
+  useEffect(() => {
+    setDraft(null);
+  }, [tool]);
 
   const toLocal = (e: React.PointerEvent): { x: number; y: number } => {
     const rect = svgRef.current!.getBoundingClientRect();
@@ -92,9 +127,26 @@ export function AnnotationCanvas({
       onTextCreate(Math.round(x), Math.round(y));
       return;
     }
-    if (tool !== "line" && tool !== "rect") return;
+    if (tool !== "line" && tool !== "rect" && tool !== "crop" && tool !== "measure") return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    setDraft({ id: nextId(), type: tool, x1: x, y1: y, x2: x, y2: y, color, strokeWidth, dash });
+    const base = {
+      id: nextId(),
+      color: tool === "measure" ? MEASURE_COLOR : color,
+      strokeWidth: tool === "measure" ? 2 : strokeWidth,
+      dash: tool === "measure" ? ("dashed" as const) : dash,
+      x1: x,
+      y1: y,
+      x2: x,
+      y2: y,
+    };
+    // 裁剪借用矩形绘制选区（提交走 onCropSelect，不会成为标注）；rect 草稿带填充属性
+    if (tool === "crop" || tool === "rect") {
+      setDraft({ ...base, type: "rect", fillColor, fillOpacity });
+    } else if (tool === "measure") {
+      setDraft({ ...base, type: "measure" });
+    } else {
+      setDraft({ ...base, type: "line" });
+    }
   };
 
   const handleMove = (e: React.PointerEvent) => {
@@ -112,7 +164,7 @@ export function AnnotationCanvas({
       } else {
         const idx = drag.index;
         const o = drag.orig;
-        if (a.type === "line" && o.type === "line") {
+        if ((a.type === "line" || a.type === "measure") && (o.type === "line" || o.type === "measure")) {
           onUpdate(a.id, (idx === 0 ? { x1: px, y1: py } : { x2: px, y2: py }) as Partial<Annotation>);
         } else if (a.type === "rect" && o.type === "rect") {
           const corners = [
@@ -129,7 +181,7 @@ export function AnnotationCanvas({
     if (!draft || draft.type === "text") return;
     let x = px;
     let y = py;
-    if (draft.type === "line" && e.shiftKey) {
+    if ((draft.type === "line" || draft.type === "measure") && e.shiftKey) {
       if (Math.abs(x - draft.x1) >= Math.abs(y - draft.y1)) y = draft.y1;
       else x = draft.x1;
     }
@@ -150,7 +202,18 @@ export function AnnotationCanvas({
     }
     if (!draft || draft.type === "text") return;
     const moved = Math.abs(draft.x2 - draft.x1) > 2 || Math.abs(draft.y2 - draft.y1) > 2;
-    if (moved) onCreate(draft);
+    if (moved) {
+      if (tool === "crop") {
+        onCropSelect({
+          x1: Math.min(draft.x1, draft.x2),
+          y1: Math.min(draft.y1, draft.y2),
+          x2: Math.max(draft.x1, draft.x2),
+          y2: Math.max(draft.y1, draft.y2),
+        });
+      } else {
+        onCreate(draft);
+      }
+    }
     setDraft(null);
   };
 
@@ -185,7 +248,34 @@ export function AnnotationCanvas({
     if (a.type === 'line') {
       node = <line key={key} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} {...strokeProps} strokeLinecap='round' />;
     } else if (a.type === 'rect') {
-      node = <rect key={key} x={Math.min(a.x1, a.x2)} y={Math.min(a.y1, a.y2)} width={Math.abs(a.x2 - a.x1)} height={Math.abs(a.y2 - a.y1)} fill='none' {...strokeProps} />;
+      node = <rect key={key} x={Math.min(a.x1, a.x2)} y={Math.min(a.y1, a.y2)} width={Math.abs(a.x2 - a.x1)} height={Math.abs(a.y2 - a.y1)} fill={a.fillColor} fillOpacity={a.fillOpacity} {...strokeProps} />;
+    } else if (a.type === 'measure') {
+      node = (
+        <g key={key}>
+          <line
+            x1={a.x1}
+            y1={a.y1}
+            x2={a.x2}
+            y2={a.y2}
+            stroke={MEASURE_COLOR}
+            strokeWidth={a.strokeWidth}
+            strokeDasharray="8 5"
+            strokeLinecap="round"
+          />
+          <circle cx={a.x1} cy={a.y1} r={3 / displayScale} fill={MEASURE_COLOR} />
+          <circle cx={a.x2} cy={a.y2} r={3 / displayScale} fill={MEASURE_COLOR} />
+          <text
+            x={(a.x1 + a.x2) / 2}
+            y={(a.y1 + a.y2) / 2 - 6 / displayScale}
+            fontSize={MEASURE_LABEL_SIZE / displayScale}
+            fill="#374151"
+            textAnchor="middle"
+            style={{ fontFamily: 'sans-serif', userSelect: 'none' }}
+          >
+            {measureLabel(a)}
+          </text>
+        </g>
+      );
     } else {
       const baseline0 = a.y + a.fontSize * 0.9;
       node = (
@@ -233,14 +323,46 @@ export function AnnotationCanvas({
       {annotations.map((a, i) => renderShape(a, 'a' + i, a.id === selectedId))}
       {draft && renderShape(draft, 'draft', false)}
 
+      {/* 裁剪选区：选区外半透明遮罩（4 段）+ 虚线框 */}
+      {cropRect && (
+        <>
+          {(() => {
+            const x1 = Math.min(cropRect.x1, cropRect.x2);
+            const y1 = Math.min(cropRect.y1, cropRect.y2);
+            const x2 = Math.max(cropRect.x1, cropRect.x2);
+            const y2 = Math.max(cropRect.y1, cropRect.y2);
+            const dim = 'rgba(0,0,0,0.5)';
+            return (
+              <g pointerEvents="none">
+                <rect x={0} y={0} width={naturalWidth} height={y1} fill={dim} />
+                <rect x={0} y={y2} width={naturalWidth} height={naturalHeight - y2} fill={dim} />
+                <rect x={0} y={y1} width={x1} height={y2 - y1} fill={dim} />
+                <rect x={x2} y={y1} width={naturalWidth - x2} height={y2 - y1} fill={dim} />
+                <rect
+                  x={x1}
+                  y={y1}
+                  width={x2 - x1}
+                  height={y2 - y1}
+                  fill="none"
+                  stroke="#3b82f6"
+                  strokeWidth={2 / displayScale}
+                  strokeDasharray={`${8 / displayScale} ${5 / displayScale}`}
+                />
+              </g>
+            );
+          })()}
+        </>
+      )}
+
       {/* 选择模式：透明命中层（本体描边加宽或文本包围盒） */}
       {tool === 'select' &&
         annotations.map((a) => {
           const pick = (e: React.PointerEvent) => startSelect(e, a);
-          if (a.type === 'line')
+          // 测量线与普通线同样用加宽透明线做命中区
+          if (a.type === 'line' || a.type === 'measure')
             return <line key={'p' + a.id} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke='transparent' strokeWidth={a.strokeWidth + 10 / displayScale} strokeLinecap='round' style={{ cursor: 'move' }} onPointerDown={pick} />;
           if (a.type === 'rect')
-            return <rect key={'p' + a.id} x={Math.min(a.x1, a.x2)} y={Math.min(a.y1, a.y2)} width={Math.abs(a.x2 - a.x1)} height={Math.abs(a.y2 - a.y1)} fill='none' stroke='transparent' strokeWidth={10 / displayScale} style={{ cursor: 'move' }} onPointerDown={pick} />;
+            return <rect key={'p' + a.id} x={Math.min(a.x1, a.x2)} y={Math.min(a.y1, a.y2)} width={Math.abs(a.x2 - a.x1)} height={Math.abs(a.y2 - a.y1)} fill='transparent' stroke='transparent' strokeWidth={10 / displayScale} style={{ cursor: 'move' }} onPointerDown={pick} />;
           const b = textBBox(a);
           return <rect key={'p' + a.id} x={b.x} y={b.y} width={b.w} height={b.h} fill='transparent' style={{ cursor: 'move' }} onPointerDown={pick} onDoubleClick={() => onTextEdit(a.id)} />;
         })}
@@ -253,7 +375,7 @@ export function AnnotationCanvas({
             const pad = 4 / displayScale;
             return <rect x={b.x - pad} y={b.y - pad} width={b.w + pad * 2} height={b.h + pad * 2} fill='none' stroke='#3b82f6' strokeWidth={1.5 / displayScale} strokeDasharray={`${6 / displayScale} ${4 / displayScale}`} pointerEvents='none' />;
           })()}
-          {selected.type === 'line' && (
+          {(selected.type === 'line' || selected.type === 'measure') && (
             <>
               {startPointHandle(selected, 0, selected.x1, selected.y1)}
               {startPointHandle(selected, 1, selected.x2, selected.y2)}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, RotateCcw, AlertCircle, X } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
+import { ImageWorkbench } from "@/components/tools/ImageWorkbench";
 import { FileList, type FileResult } from "@/components/tools/FileList";
 import { ErrorAlert } from "@/components/common/ErrorAlert";
 import { ProcessProgress } from "@/components/common/ProcessProgress";
@@ -21,19 +22,8 @@ import {
 } from "@/lib/file";
 import { AppError, type AppErrorCode, type FileItem } from "@/types";
 
-/** 预览容器固定高度（像素） */
-const CONTAINER_HEIGHT = 320;
-
 /** 原图坐标系下裁剪框的最小尺寸（像素），避免缩到看不见 */
 const MIN_CROP_SIZE = 10;
-
-interface DisplayInfo {
-  scale: number;
-  displayW: number;
-  displayH: number;
-  offsetX: number;
-  offsetY: number;
-}
 
 interface Rect {
   x1: number;
@@ -51,27 +41,6 @@ interface DragState {
   mode: "move" | HandlePos;
 }
 
-/**
- * 模仿 CSS object-fit: contain：
- * 图片在固定尺寸容器中等比缩放并居中。
- * 返回的 offsetX/Y 即图片在容器内的左上偏移量，裁剪框的容器坐标 = offset + 原图坐标 × scale。
- */
-function calcDisplayInfo(
-  containerW: number,
-  containerH: number,
-  imageW: number,
-  imageH: number
-): DisplayInfo {
-  if (!containerW || !containerH || !imageW || !imageH) {
-    return { scale: 0, displayW: 0, displayH: 0, offsetX: 0, offsetY: 0 };
-  }
-  const scale = Math.min(containerW / imageW, containerH / imageH);
-  const displayW = imageW * scale;
-  const displayH = imageH * scale;
-  const offsetX = (containerW - displayW) / 2;
-  const offsetY = (containerH - displayH) / 2;
-  return { scale, displayW, displayH, offsetX, offsetY };
-}
 
 /** 移动裁剪框（保持原尺寸不变，仅平移） */
 function applyMove(
@@ -159,13 +128,8 @@ export default function ParameterCropPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [naturalW, setNaturalW] = useState(0);
   const [naturalH, setNaturalH] = useState(0);
-  const [displayInfo, setDisplayInfo] = useState<DisplayInfo>({
-    scale: 0,
-    displayW: 0,
-    displayH: 0,
-    offsetX: 0,
-    offsetY: 0,
-  });
+  /** 工作台显示缩放（原图像素 -> 屏幕像素），由 ImageWorkbench 回调 */
+  const [displayScale, setDisplayScale] = useState(0);
   const [rect, setRect] = useState<Rect>({ x1: 0, y1: 0, x2: 0, y2: 0 });
   const [format, setFormat] = useState<CropOutputFormat>("original");
   const [quality, setQuality] = useState(92);
@@ -185,7 +149,6 @@ export default function ParameterCropPage() {
     ? dimensions.get(currentFile.id)
     : undefined;
 
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
 
   /**
@@ -296,13 +259,7 @@ export default function ParameterCropPage() {
     setCurrentIndex(0);
     setNaturalW(0);
     setNaturalH(0);
-    setDisplayInfo({
-      scale: 0,
-      displayW: 0,
-      displayH: 0,
-      offsetX: 0,
-      offsetY: 0,
-    });
+    setDisplayScale(0);
     setRect({ x1: 0, y1: 0, x2: 0, y2: 0 });
     setError(null);
     setRejectMessage(null);
@@ -343,28 +300,6 @@ export default function ParameterCropPage() {
     };
   }, [imageSrc]);
 
-  /**
-   * 监听容器尺寸 + 原图尺寸变化，重新计算 displayInfo
-   * ResizeObserver 比单一 onLoad 触发更准确：窗口大小变化、容器宽度变化都会重算
-   */
-  useEffect(() => {
-    if (!containerRef.current || !naturalW || !naturalH) return;
-    const update = () => {
-      const el = containerRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      setDisplayInfo(calcDisplayInfo(r.width, CONTAINER_HEIGHT, naturalW, naturalH));
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(containerRef.current);
-    window.addEventListener("resize", update);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, [naturalW, naturalH]);
-
   /** 原图尺寸确定后，初始化裁剪框为中央 80% 区域 */
   useEffect(() => {
     if (!naturalW || !naturalH) return;
@@ -384,7 +319,7 @@ export default function ParameterCropPage() {
    */
   const handlePointerDown = useCallback(
     (mode: "move" | HandlePos) => (e: React.PointerEvent) => {
-      if (!displayInfo.scale) return;
+      if (!displayScale) return;
       e.preventDefault();
       e.stopPropagation();
       const initRect = { ...rect };
@@ -397,9 +332,9 @@ export default function ParameterCropPage() {
 
       const handleMove = (ev: PointerEvent) => {
         const state = dragStateRef.current;
-        if (!state || !displayInfo.scale) return;
-        const dx = (ev.clientX - state.startX) / displayInfo.scale;
-        const dy = (ev.clientY - state.startY) / displayInfo.scale;
+        if (!state || !displayScale) return;
+        const dx = (ev.clientX - state.startX) / displayScale;
+        const dy = (ev.clientY - state.startY) / displayScale;
         const next =
           state.mode === "move"
             ? applyMove(state.initRect, dx, dy, naturalW, naturalH)
@@ -423,7 +358,7 @@ export default function ParameterCropPage() {
       window.addEventListener("pointerup", handleUp);
       window.addEventListener("pointercancel", handleUp);
     },
-    [displayInfo.scale, rect, naturalW, naturalH]
+    [displayScale, rect, naturalW, naturalH]
   );
 
   /** 坐标输入：限制范围 + 防止无效值 */
@@ -524,11 +459,12 @@ export default function ParameterCropPage() {
     downloadBlob(zipBlob, "cropped_images.zip");
   }, [files, results, format]);
 
-  // 当前裁剪框在容器中的几何参数（计算一次复用）
-  const boxLeft = displayInfo.offsetX + rect.x1 * displayInfo.scale;
-  const boxTop = displayInfo.offsetY + rect.y1 * displayInfo.scale;
-  const boxW = (rect.x2 - rect.x1) * displayInfo.scale;
-  const boxH = (rect.y2 - rect.y1) * displayInfo.scale;
+  // 当前裁剪框在工作台内容层中的几何参数
+  // 内容层尺寸 = 原图 × displayScale 且填满 wrapper，因此无 letterbox 偏移项
+  const boxLeft = rect.x1 * displayScale;
+  const boxTop = rect.y1 * displayScale;
+  const boxW = (rect.x2 - rect.x1) * displayScale;
+  const boxH = (rect.y2 - rect.y1) * displayScale;
 
   return (
     <ToolLayout
@@ -617,20 +553,21 @@ export default function ParameterCropPage() {
               </button>
             </div>
 
-            {/* 预览容器：固定高度 + 暗色 letterbox，图片 object-contain 居中 */}
-            <div
-              ref={containerRef}
-              className="relative w-full select-none overflow-hidden rounded-xl bg-gray-900"
-              style={{ height: `${CONTAINER_HEIGHT}px` }}
+            {/* 预览工作台：大图铺满 + 滚轮缩放，裁剪框叠加在内容层上 */}
+            <ImageWorkbench
+              naturalWidth={naturalW}
+              naturalHeight={naturalH}
+              onScaleChange={setDisplayScale}
+              heightClass="h-[75vh]"
             >
               <img
                 src={imageSrc}
                 alt="原图"
-                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+                className="pointer-events-none absolute inset-0 h-full w-full"
                 draggable={false}
               />
 
-              {displayInfo.scale > 0 && (
+              {displayScale > 0 && (
                 <>
                   {/* 暗色遮罩：覆盖裁剪框之外的区域（4 段拼接） */}
                   <div className="pointer-events-none absolute inset-0">
@@ -642,7 +579,7 @@ export default function ParameterCropPage() {
                     {/* 下 */}
                     <div
                       className="absolute bottom-0 left-0 right-0 bg-black/55"
-                      style={{ height: CONTAINER_HEIGHT - (boxTop + boxH) }}
+                      style={{ height: naturalH * displayScale - (boxTop + boxH) }}
                     />
                     {/* 左 */}
                     <div
@@ -726,7 +663,7 @@ export default function ParameterCropPage() {
                   </div>
                 </>
               )}
-            </div>
+            </ImageWorkbench>
 
             {/* 坐标输入（精确控制） */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

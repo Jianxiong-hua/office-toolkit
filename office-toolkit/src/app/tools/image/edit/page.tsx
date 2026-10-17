@@ -2,17 +2,23 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
+  Crop,
   Download,
   Loader2,
   Minus,
   MousePointer2,
   Redo2,
+  Ruler,
+  X,
   Square,
   Trash2,
   Type as TypeIcon,
   Undo2,
 } from "lucide-react";
+import { ImageWorkbench } from "@/components/tools/ImageWorkbench";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { ErrorAlert } from "@/components/common/ErrorAlert";
 import { FileDropZone } from "@/components/tools/FileDropZone";
@@ -24,7 +30,7 @@ import {
 } from "@/lib/file";
 import { adjustPixels, DEFAULT_ADJUST, type AdjustParams } from "@/lib/image/adjust";
 import { AdjustPanel } from "./AdjustPanel";
-import { AnnotationCanvas } from "./AnnotationCanvas";
+import { AnnotationCanvas, measureLabel } from "./AnnotationCanvas";
 import {
   ANNOTATION_COLORS,
   DASH_ARRAYS,
@@ -32,6 +38,9 @@ import {
   DEFAULT_FONT_SIZE,
   DEFAULT_STROKE_WIDTH,
   FONT_SIZE_OPTIONS,
+  DEFAULT_FILL_OPACITY,
+  MEASURE_COLOR,
+  MEASURE_LABEL_SIZE,
   STROKE_WIDTH_OPTIONS,
   TEXT_LINE_HEIGHT,
   type Annotation,
@@ -41,6 +50,25 @@ import {
 
 /** 预览降采样的长边上限；1200x900 约 108 万像素，全像素循环一次约 10-20ms */
 const PREVIEW_MAX_EDGE = 1200;
+
+/** hex（#rrggbb）→ rgba() 字符串，供 canvas 绘制半透明填充用 */
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return "rgba(" + ((n >> 16) & 255) + ", " + ((n >> 8) & 255) + ", " + (n & 255) + ", " + alpha + ")";
+}
+
+/** 标注列表中的简要描述 */
+function shapeLabel(a: Annotation): string {
+  if (a.type === "line")
+    return `(${Math.round(a.x1)}, ${Math.round(a.y1)}) → (${Math.round(a.x2)}, ${Math.round(a.y2)})`;
+  if (a.type === "rect")
+    return `(${Math.round(Math.min(a.x1, a.x2))}, ${Math.round(Math.min(a.y1, a.y2))}) ${Math.round(Math.abs(a.x2 - a.x1))}×${Math.round(Math.abs(a.y2 - a.y1))}`;
+  if (a.type === "measure") return measureLabel(a);
+  const first = a.text.split("\n")[0];
+  return first.length > 12 ? first.slice(0, 12) + "…" : first;
+}
 const ZOOM_MIN = 0.05;
 const ZOOM_MAX = 8;
 
@@ -73,6 +101,9 @@ export default function ImageEditPage() {
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
   const [strokeWidth, setStrokeWidth] = useState<number>(DEFAULT_STROKE_WIDTH);
   const [dash, setDash] = useState<LineDash>("solid");
+  /** 画框填充：独立于描边色的填充色与不透明度（0-1）；新框默认值，选中画框时可改 */
+  const [fillColor, setFillColor] = useState<string>(DEFAULT_COLOR);
+  const [fillOpacity, setFillOpacity] = useState<number>(DEFAULT_FILL_OPACITY);
   const [fontSize, setFontSize] = useState<number>(DEFAULT_FONT_SIZE);
   /** 字号输入框的原始文本（允许中间态如空串、个位数），失焦时收敛 */
   const [fontSizeText, setFontSizeText] = useState<string>(String(DEFAULT_FONT_SIZE));
@@ -85,20 +116,30 @@ export default function ImageEditPage() {
   const [past, setPast] = useState<Annotation[][]>([]);
   const [future, setFuture] = useState<Annotation[][]>([]);
 
-  // 显示缩放（相对原图像素的倍率）：fit 时不大于容器，滚轮可在 0.05x - 8x 间调整
+  // 显示缩放（原图像素 -> 屏幕像素），由共享工作台 ImageWorkbench 回调
   const [displayScale, setDisplayScale] = useState(1);
-  const workbenchRef = useRef<HTMLDivElement>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const fitScaleRef = useRef(1);
 
   const imgRef = useRef<HTMLImageElement | null>(null);
   imgRef.current = img;
+  const imgDataUrlRef = useRef<string>("");
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const sourcePixelsRef = useRef<ImageData | null>(null);
   const annotationsRef = useRef<Annotation[]>([]);
   annotationsRef.current = annotations;
   const dragSnapshotRef = useRef<Annotation[] | null>(null);
   const nextIdRef = useRef(1);
+
+  /** 裁剪选区（原图坐标），由 AnnotationCanvas 在裁剪模式下拖出后提交 */
+  const [cropRect, setCropRect] = useState<{
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  } | null>(null);
+  /** 图像级历史：撤销裁剪用。存 dataURL 快照（字符串引用，非位图拷贝），上限 5 层 */
+  const [imageHistory, setImageHistory] = useState<
+    { dataUrl: string; naturalW: number; naturalH: number; annotations: Annotation[] }[]
+  >([]);
 
   // 预览渲染：源像素 -> adjustPixels -> 显示 canvas。rAF 节流，每帧最多重算一次
   useEffect(() => {
@@ -126,60 +167,6 @@ export default function ImageEditPage() {
     return () => cancelAnimationFrame(id);
   }, [params, img, showOriginal]);
 
-  // fit 缩放：图片加载时测量并应用一次。
-  // 注意：ResizeObserver 只更新 fitScaleRef，绝不能重置 displayScale——
-  // 否则滚轮放大导致内容溢出、容器出现滚动条、clientWidth 变化时，
-  // 缩放会被 measure 拉回 fit，表现为「放大无效」
-  useEffect(() => {
-    const el = workbenchRef.current;
-    const image = imgRef.current;
-    if (!el || !image) return;
-    const measure = () => {
-      const s = Math.min(
-        el.clientWidth / image.naturalWidth,
-        el.clientHeight / image.naturalHeight
-      );
-      return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, s));
-    };
-    fitScaleRef.current = measure();
-    setDisplayScale(fitScaleRef.current);
-    const observer = new ResizeObserver(() => {
-      fitScaleRef.current = measure();
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [img]);
-
-  // 滚轮缩放：以鼠标位置为锚点，缩放后视点不漂移。React 的 onWheel 是 passive，必须用原生监听。
-  // 尺寸与滚动必须在同一事件内**同步**写 DOM：若 setState 后靠 rAF 再调 scroll，
-  // rAF 可能跑在 React 提交新布局之前，产生一帧「旧尺寸 + 新滚动」的中间画面（即闪烁）；
-  // setState 只负责让 React 对齐到相同值，不再产生额外跳变
-  useEffect(() => {
-    const el = workbenchRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      const image = imgRef.current;
-      const wrapper = wrapperRef.current;
-      if (!image || !wrapper) return;
-      e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-      const cur = displayScale;
-      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, cur * factor));
-      if (next === cur) return;
-      const px = e.clientX - el.getBoundingClientRect().left;
-      const py = e.clientY - el.getBoundingClientRect().top;
-      const ratioX = (el.scrollLeft + px) / (image.naturalWidth * cur);
-      const ratioY = (el.scrollTop + py) / (image.naturalHeight * cur);
-      wrapper.style.width = image.naturalWidth * next + "px";
-      wrapper.style.height = image.naturalHeight * next + "px";
-      el.scrollLeft = ratioX * image.naturalWidth * next - px;
-      el.scrollTop = ratioY * image.naturalHeight * next - py;
-      setDisplayScale(next);
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [displayScale, img]);
-
   const handleFileAdded = useCallback(async (items: { file: File }[]) => {
     const item = items[0];
     if (!item) return;
@@ -202,6 +189,7 @@ export default function ImageEditPage() {
       ctx.drawImage(image, 0, 0, w, h);
       sourcePixelsRef.current = ctx.getImageData(0, 0, w, h);
       imgRef.current = image;
+      imgDataUrlRef.current = dataUrl;
       setImg(image);
       setFileName(item.file.name);
       setParams({ ...DEFAULT_ADJUST });
@@ -211,6 +199,8 @@ export default function ImageEditPage() {
       setPast([]);
       setFuture([]);
       setTool(null);
+      setCropRect(null);
+      setImageHistory([]);
       nextIdRef.current = 1;
     } catch {
       setError("图片加载失败，请重新选择");
@@ -239,6 +229,89 @@ export default function ImageEditPage() {
 
   // 直接读闭包值而非在 setState updater 内嵌套 setState——
   // StrictMode 下 updater 会被双调用，嵌套的 setFuture 会被推入两次
+  /** 根据当前 img 重建降采样预览的源像素（裁剪/撤销裁剪后画布变化时调用） */
+  const rebuildSourcePixels = useCallback((image: HTMLImageElement) => {
+    const scale = Math.min(
+      1,
+      PREVIEW_MAX_EDGE / Math.max(image.naturalWidth, image.naturalHeight)
+    );
+    const w = Math.max(1, Math.round(image.naturalWidth * scale));
+    const h = Math.max(1, Math.round(image.naturalHeight * scale));
+    const offscreen = document.createElement("canvas");
+    offscreen.width = w;
+    offscreen.height = h;
+    const ctx = offscreen.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(image, 0, 0, w, h);
+    sourcePixelsRef.current = ctx.getImageData(0, 0, w, h);
+  }, []);
+
+  /** 应用裁剪：裁剪原图替换画布，标注坐标平移到新坐标系，撤销栈清空（坐标系失效） */
+  const applyCrop = useCallback(async () => {
+    const image = imgRef.current;
+    if (!cropRect || !image) return;
+    const w = Math.round(cropRect.x2 - cropRect.x1);
+    const h = Math.round(cropRect.y2 - cropRect.y1);
+    if (w < 1 || h < 1) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(image, cropRect.x1, cropRect.y1, w, h, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL("image/png");
+    const cropped = await loadImage(dataUrl);
+    setImageHistory((hist) => [
+      {
+        dataUrl: imgDataUrlRef.current,
+        naturalW: image.naturalWidth,
+        naturalH: image.naturalHeight,
+        annotations: annotationsRef.current,
+      },
+      ...hist.slice(0, 4),
+    ]);
+    imgRef.current = cropped;
+    setImg(cropped);
+    imgDataUrlRef.current = dataUrl;
+    rebuildSourcePixels(cropped);
+    setAnnotations((list) =>
+      list.map((a) =>
+        a.type === "text"
+          ? { ...a, x: a.x - cropRect.x1, y: a.y - cropRect.y1 }
+          : {
+              ...a,
+              x1: a.x1 - cropRect.x1,
+              y1: a.y1 - cropRect.y1,
+              x2: a.x2 - cropRect.x1,
+              y2: a.y2 - cropRect.y1,
+            }
+      )
+    );
+    setPast([]);
+    setFuture([]);
+    setSelectedId(null);
+    setTool(null);
+    setCropRect(null);
+  }, [cropRect, rebuildSourcePixels]);
+
+  /** 撤销裁剪：恢复上一份图像快照与当时的标注 */
+  const undoCrop = useCallback(async () => {
+    const prev = imageHistory[0];
+    if (!prev) return;
+    const image = await loadImage(prev.dataUrl);
+    imgRef.current = image;
+    setImg(image);
+    imgDataUrlRef.current = prev.dataUrl;
+    rebuildSourcePixels(image);
+    setAnnotations(prev.annotations);
+    setImageHistory((h) => h.slice(1));
+    setPast([]);
+    setFuture([]);
+    setSelectedId(null);
+    setCropRect(null);
+  }, [imageHistory, rebuildSourcePixels]);
+
+
   const undo = useCallback(() => {
     if (past.length === 0) return;
     setFuture((f) => [annotations, ...f]);
@@ -298,6 +371,43 @@ export default function ImageEditPage() {
     [pushSnapshot]
   );
 
+  /** 删除单个标注（测量结果列表的删除走同一函数，保证画布与列表同步） */
+  const removeAnnotation = useCallback(
+    (id: number) => {
+      pushSnapshot(annotationsRef.current);
+      setAnnotations((list) => list.filter((a) => a.id !== id));
+      setSelectedId(null);
+    },
+    [pushSnapshot]
+  );
+
+  /**
+   * 调整叠层顺序：annotations 数组顺序即 SVG 渲染顺序（后者盖前者）。
+   * dir=1 上移一层（更靠顶层），dir=-1 下移一层；与相邻元素交换（相邻为测量线时同样越过）。
+   */
+  const moveAnnotation = useCallback(
+    (id: number, dir: -1 | 1) => {
+      const list = annotationsRef.current;
+      const i = list.findIndex((a) => a.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= list.length) return;
+      pushSnapshot(list);
+      setAnnotations((prev) => {
+        const copy = [...prev];
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+        return copy;
+      });
+    },
+    [pushSnapshot]
+  );
+
+  /** 清空全部测量线 */
+  const clearMeasures = useCallback(() => {
+    if (!annotationsRef.current.some((a) => a.type === "measure")) return;
+    pushSnapshot(annotationsRef.current);
+    setAnnotations((list) => list.filter((a) => a.type !== "measure"));
+    setSelectedId(null);
+  }, [pushSnapshot]);
   /** 修改选中元素属性（颜色/线宽/线型/字号），每次离散操作入栈一次 */
   const patchSelected = useCallback(
     (patch: object) => {
@@ -443,6 +553,32 @@ export default function ImageEditPage() {
             });
             continue;
           }
+          if (a.type === "measure") {
+            // 与 SVG 预览同一公式：灰色虚线 + 两端圆点 + 中点上方坐标/距离标签
+            ctx.strokeStyle = MEASURE_COLOR;
+            ctx.lineWidth = a.strokeWidth;
+            ctx.setLineDash([8, 5]);
+            ctx.beginPath();
+            ctx.moveTo(a.x1, a.y1);
+            ctx.lineTo(a.x2, a.y2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = MEASURE_COLOR;
+            for (const [cx, cy] of [
+              [a.x1, a.y1],
+              [a.x2, a.y2],
+            ]) {
+              ctx.beginPath();
+              ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.font = MEASURE_LABEL_SIZE + "px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#374151";
+            ctx.fillText(measureLabel(a), (a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2 - 6);
+            ctx.textAlign = "start";
+            continue;
+          }
           ctx.strokeStyle = a.color;
           ctx.lineWidth = a.strokeWidth;
           ctx.beginPath();
@@ -456,6 +592,11 @@ export default function ImageEditPage() {
               Math.abs(a.x2 - a.x1),
               Math.abs(a.y2 - a.y1)
             );
+            // 先填充后描边：半透明填充不会洗淡描边（与 SVG 预览同参数）
+            if (a.fillOpacity > 0) {
+              ctx.fillStyle = hexToRgba(a.fillColor, a.fillOpacity);
+              ctx.fill();
+            }
           }
           ctx.stroke();
         }
@@ -478,10 +619,24 @@ export default function ImageEditPage() {
   );
 
   const selected = selectedId != null ? annotations.find((a) => a.id === selectedId) ?? null : null;
+  const measureList = annotations.filter((a) => a.type === "measure");
+  /** 绘制图形列表（不含测量，测量走独立面板）：数组顺序即叠层顺序，列表倒序展示使顶部 = 最上层 */
+  const shapeList = annotations.filter((a) => a.type !== "measure");
   const isSelect = tool === "select";
   const btn = (active: boolean) =>
-    `flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm transition-colors ` +
+    `flex h-8 w-8 items-center justify-center rounded-lg transition-colors ` +
     (active ? "bg-brand-600 text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-50");
+
+  /** 填充透明度滑杆：拖动/按键过程中实时更新（不走撤销栈），结束后与手柄拖动同一规则判断是否入栈 */
+  const commitFillOpacity = useCallback(() => {
+    if (selected?.type !== "rect") {
+      onDragEnd(false);
+      return;
+    }
+    const before = dragSnapshotRef.current?.find((a) => a.id === selected.id);
+    const after = annotationsRef.current.find((a) => a.id === selected.id);
+    onDragEnd(!!before && !!after && JSON.stringify(before) !== JSON.stringify(after));
+  }, [selected, onDragEnd]);
 
   return (
     <ToolLayout
@@ -508,46 +663,98 @@ export default function ImageEditPage() {
 
       {img && (
         <div className="space-y-3">
-          {/* 工具栏 */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl border border-gray-100 bg-white p-3">
+          {/* 工具栏：工具图标组｜描边色｜填充色+透明度（仅画框时）｜线宽｜线型｜字号 */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-gray-100 bg-white p-3">
             <div className="flex items-center gap-1.5">
               <button onClick={() => { setTool("select"); setSelectedId(null); }} className={btn(isSelect)} title="选择并编辑已有标注">
                 <MousePointer2 className="h-4 w-4" />
-                选择
               </button>
-              <button onClick={() => setTool(tool === "line" ? null : "line")} className={btn(tool === "line")}>
+              <button onClick={() => setTool(tool === "line" ? null : "line")} className={btn(tool === "line")} title="画线">
                 <Minus className="h-4 w-4" />
-                画线
               </button>
-              <button onClick={() => setTool(tool === "rect" ? null : "rect")} className={btn(tool === "rect")}>
+              <button onClick={() => setTool(tool === "rect" ? null : "rect")} className={btn(tool === "rect")} title="画框">
                 <Square className="h-4 w-4" />
-                画框
               </button>
-              <button onClick={() => setTool(tool === "text" ? null : "text")} className={btn(tool === "text")}>
+              <button onClick={() => setTool(tool === "text" ? null : "text")} className={btn(tool === "text")} title="文本">
                 <TypeIcon className="h-4 w-4" />
-                文本
+              </button>
+              <button onClick={() => { setTool(tool === "crop" ? null : "crop"); setCropRect(null); }} className={btn(tool === "crop")} title="裁剪">
+                <Crop className="h-4 w-4" />
+              </button>
+              <button onClick={() => { setTool(tool === "measure" ? null : "measure"); setSelectedId(null); }} className={btn(tool === "measure")} title="距离测量：绘制直线显示两端坐标与距离">
+                <Ruler className="h-4 w-4" />
               </button>
             </div>
 
+            <div className="h-6 w-px bg-gray-200" />
+
+            {/* 描边色 */}
             <div className="flex items-center gap-1.5">
               {ANNOTATION_COLORS.map((c) => (
                 <button
                   key={c}
-                  onClick={() => { setColor(c); if (selected) patchSelected({ color: c }); }}
+                  onClick={() => { setColor(c); if (selected && selected.type !== "measure") patchSelected({ color: c }); }}
                   style={{ backgroundColor: c }}
                   className={`h-6 w-6 rounded-full border-2 transition-transform ${
                     color === c ? "scale-110 border-brand-600" : "border-gray-200 hover:scale-105"
                   }`}
-                  title={c}
+                  title={`描边色 ${c}`}
                 />
               ))}
             </div>
+
+            {/* 填充色与透明度：仅在画框工具或选中画框时显示 */}
+            {(tool === "rect" || selected?.type === "rect") && (
+              <>
+                <div className="h-6 w-px bg-gray-200" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-400">填充</span>
+                  {ANNOTATION_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => { setFillColor(c); if (selected?.type === "rect") patchSelected({ fillColor: c }); }}
+                      style={{ backgroundColor: c }}
+                      className={`h-6 w-6 rounded-full border-2 transition-transform ${
+                        (selected?.type === "rect" ? selected.fillColor : fillColor) === c ? "scale-110 border-brand-600" : "border-gray-200 hover:scale-105"
+                      }`}
+                      title={`填充色 ${c}`}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-400">透明</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={Math.round((selected?.type === "rect" ? selected.fillOpacity : fillOpacity) * 100)}
+                    onPointerDown={onDragStart}
+                    onKeyDown={onDragStart}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) / 100;
+                      setFillOpacity(v);
+                      if (selected?.type === "rect") updateAnnotation(selected.id, { fillOpacity: v });
+                    }}
+                    onPointerUp={commitFillOpacity}
+                    onKeyUp={commitFillOpacity}
+                    className="h-1 w-16 cursor-pointer accent-brand-600"
+                    title="填充透明度"
+                  />
+                  <span className="w-9 text-xs text-gray-500">
+                    {Math.round((selected?.type === "rect" ? selected.fillOpacity : fillOpacity) * 100)}%
+                  </span>
+                </div>
+              </>
+            )}
+
+            <div className="h-6 w-px bg-gray-200" />
 
             <div className="flex overflow-hidden rounded-lg border border-gray-200">
               {STROKE_WIDTH_OPTIONS.map((w) => (
                 <button
                   key={w}
-                  onClick={() => { setStrokeWidth(w); if (selected && selected.type !== "text") patchSelected({ strokeWidth: w }); }}
+                  onClick={() => { setStrokeWidth(w); if (selected && selected.type !== "text" && selected.type !== "measure") patchSelected({ strokeWidth: w }); }}
                   className={`px-2.5 py-1.5 text-sm transition-colors ${
                     strokeWidth === w ? "bg-brand-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
                   }`}
@@ -562,7 +769,7 @@ export default function ImageEditPage() {
               {(["solid", "dashed", "dashdot"] as LineDash[]).map((d) => (
                 <button
                   key={d}
-                  onClick={() => { setDash(d); if (selected && selected.type !== "text") patchSelected({ dash: d }); }}
+                  onClick={() => { setDash(d); if (selected && selected.type !== "text" && selected.type !== "measure") patchSelected({ dash: d }); }}
                   className={`px-2.5 py-1.5 text-sm transition-colors ${
                     dash === d ? "bg-brand-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
                   }`}
@@ -640,6 +847,11 @@ export default function ImageEditPage() {
               <button onClick={redo} disabled={future.length === 0} className="rounded-lg border border-gray-200 p-2 text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40" title="重做 (Ctrl+Shift+Z)">
                 <Redo2 className="h-4 w-4" />
               </button>
+              {imageHistory.length > 0 && (
+                <button onClick={undoCrop} className="rounded-lg border border-amber-300 px-2.5 py-1.5 text-xs text-amber-700 transition-colors hover:bg-amber-50" title="撤销上一次裁剪">
+                  撤销裁剪
+                </button>
+              )}
               <button onClick={clearAnnotations} disabled={annotations.length === 0} className="rounded-lg border border-gray-200 p-2 text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40" title="清空标注">
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -650,101 +862,178 @@ export default function ImageEditPage() {
             </button>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
-            {/* 工作台 */}
-            <div className="min-w-0 space-y-2">
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <button
-                  onClick={() => setDisplayScale(fitScaleRef.current)}
-                  className="rounded-lg border border-gray-200 px-2 py-1 transition-colors hover:bg-gray-50"
-                >
-                  适应窗口
-                </button>
-                <button
-                  onClick={() => setDisplayScale(1)}
-                  className="rounded-lg border border-gray-200 px-2 py-1 transition-colors hover:bg-gray-50"
-                >
-                  100%
-                </button>
-                <span className="font-mono">{Math.round(displayScale * 100)}%</span>
-                <button
-                  onPointerDown={() => setShowOriginal(true)}
-                  onPointerUp={() => setShowOriginal(false)}
-                  onPointerLeave={() => setShowOriginal(false)}
-                  onPointerCancel={() => setShowOriginal(false)}
-                  className={`ml-2 rounded-lg border px-2 py-1 transition-colors ${
-                    showOriginal
-                      ? "border-amber-500 bg-amber-500 text-white"
-                      : "border-gray-200 text-gray-600 hover:bg-gray-50"
-                  }`}
-                  title="按住显示原图，松开恢复当前效果"
-                >
-                  按住查看原图
-                </button>
-                <span className="text-gray-400">滚轮缩放 · Shift+画线锁定水平/垂直 · 选择模式下可拖动与改大小</span>
-              </div>
-              <div ref={workbenchRef} className="h-[75vh] overflow-auto rounded-xl border border-gray-200 bg-gray-100">
-                <div
-                  ref={wrapperRef}
-                  className="relative"
-                  style={{
-                    width: img.naturalWidth * displayScale,
-                    height: img.naturalHeight * displayScale,
-                  }}
-                >
-                  <canvas ref={displayCanvasRef} className="absolute inset-0 h-full w-full" />
-                  <AnnotationCanvas
-                    naturalWidth={img.naturalWidth}
-                    naturalHeight={img.naturalHeight}
-                    annotations={annotations}
-                    tool={tool}
-                    color={color}
-                    strokeWidth={strokeWidth}
-                    dash={dash}
-                    fontSize={fontSize}
-                    displayScale={displayScale}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                    onCreate={commitAnnotation}
-                    onUpdate={updateAnnotation}
-                    onDragStart={onDragStart}
-                    onDragEnd={onDragEnd}
-                    onTextCreate={openTextCreate}
-                    onTextEdit={openTextEdit}
-                  />
-                  {textEditing && (
-                    <textarea
-                      autoFocus
-                      value={textEditing.value}
-                      onChange={(e) => setTextEditing({ ...textEditing, value: e.target.value })}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") { setTextEditing(null); textSnapshotRef.current = null; ignoreTextBlurRef.current = false; }
-                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) commitTextEdit();
-                      }}
-                      onPointerDown={() => { ignoreTextBlurRef.current = false; }}
-                      onBlur={() => { if (!ignoreTextBlurRef.current) commitTextEdit(); }}
-                      className="absolute resize border-2 border-dashed border-brand-500 bg-white/80 p-1 font-sans leading-[1.4] outline-none"
-                      style={{
-                        left: textEditing.x * displayScale,
-                        top: textEditing.y * displayScale,
-                        fontSize: textEditing.fontSize * displayScale,
-                        color,
-                        minWidth: 160 * displayScale,
-                      }}
-                      placeholder="输入文字，Ctrl+Enter 完成，Esc 取消"
-                    />
-                  )}
-                </div>
-              </div>
+          {cropRect && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-200 bg-brand-50 p-3">
+              <span className="text-sm text-brand-800">
+                裁剪区域 {Math.round(cropRect.x2 - cropRect.x1)} x {Math.round(cropRect.y2 - cropRect.y1)} 像素，区域外内容将被裁掉，标注坐标随之平移。
+              </span>
+              <button onClick={applyCrop} className="rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700">应用裁剪</button>
+              <button onClick={() => setCropRect(null)} className="rounded-lg border border-gray-300 px-4 py-1.5 text-sm text-gray-600 hover:bg-white">取消</button>
             </div>
+          )}
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+            {/* 工作台（共享组件：fit + 滚轮锚点缩放） */}
+            <ImageWorkbench
+              naturalWidth={img.naturalWidth}
+              naturalHeight={img.naturalHeight}
+              onScaleChange={setDisplayScale}
+            >
+              <canvas ref={displayCanvasRef} className="absolute inset-0 h-full w-full" />
+              <AnnotationCanvas
+                naturalWidth={img.naturalWidth}
+                naturalHeight={img.naturalHeight}
+                annotations={annotations}
+                tool={tool}
+                color={color}
+                strokeWidth={strokeWidth}
+                dash={dash}
+                fontSize={fontSize}
+                fillColor={fillColor}
+                fillOpacity={fillOpacity}
+                displayScale={displayScale}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                onCreate={commitAnnotation}
+                onUpdate={updateAnnotation}
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                onTextCreate={openTextCreate}
+                onTextEdit={openTextEdit}
+                cropRect={cropRect}
+                onCropSelect={setCropRect}
+              />
+              {textEditing && (
+                <textarea
+                  autoFocus
+                  value={textEditing.value}
+                  onChange={(e) => setTextEditing({ ...textEditing, value: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") { setTextEditing(null); textSnapshotRef.current = null; ignoreTextBlurRef.current = false; }
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) commitTextEdit();
+                  }}
+                  onPointerDown={() => { ignoreTextBlurRef.current = false; }}
+                  onBlur={() => { if (!ignoreTextBlurRef.current) commitTextEdit(); }}
+                  className="absolute resize border-2 border-dashed border-brand-500 bg-white/80 p-1 font-sans leading-[1.4] outline-none"
+                  style={{
+                    left: textEditing.x * displayScale,
+                    top: textEditing.y * displayScale,
+                    fontSize: textEditing.fontSize * displayScale,
+                    color,
+                    minWidth: 160 * displayScale,
+                  }}
+                  placeholder="输入文字，Ctrl+Enter 完成，Esc 取消"
+                />
+              )}
+            </ImageWorkbench>
 
+            {/* 测量结果面板：与画布上的测量线同步（删除任一处，另一处同步消失） */}
+            {measureList.length > 0 && (
+              <div className="rounded-xl border border-gray-100 bg-white p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs font-medium text-gray-500">
+                    测量结果（{measureList.length}）
+                  </p>
+                  <button
+                    onClick={clearMeasures}
+                    className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 transition-colors hover:bg-gray-50"
+                  >
+                    清空
+                  </button>
+                </div>
+                <ul className="max-h-64 space-y-1 overflow-y-auto">
+                  {measureList.map((m, i) => (
+                    <li
+                      key={m.id}
+                      className={`flex items-center gap-2 rounded-lg px-2 py-1 text-xs ${
+                        selectedId === m.id ? "bg-brand-50" : ""
+                      }`}
+                    >
+                      <span className="font-mono text-gray-700">
+                        #{i + 1} ({Math.round(m.x1)}, {Math.round(m.y1)}) → ({Math.round(m.x2)}, {Math.round(m.y2)})
+                      </span>
+                      <span className="ml-auto shrink-0 font-medium text-gray-900">
+                        {Math.round(Math.hypot(m.x2 - m.x1, m.y2 - m.y1))} px
+                      </span>
+                      <button
+                        onClick={() => removeAnnotation(m.id)}
+                        className="shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                        title="删除此测量"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {/* 右栏 */}
             <div className="min-w-0 space-y-3">
+              {/* 标注图层：倒序展示，列表顶部 = 画布最上层；可调叠层、删除 */}
+              {shapeList.length > 0 && (
+                <div className="rounded-xl border border-gray-100 bg-white p-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-medium text-gray-500">标注图层（{shapeList.length}）</p>
+                    <span className="text-xs text-gray-400">顶部 = 最上层</span>
+                  </div>
+                  <ul className="max-h-64 space-y-1 overflow-y-auto">
+                    {[...shapeList].reverse().map((a, di) => {
+                      const oi = shapeList.length - 1 - di;
+                      return (
+                        <li
+                          key={a.id}
+                          className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs ${
+                            selectedId === a.id ? "bg-brand-50" : ""
+                          }`}
+                        >
+                          <button
+                            onClick={() => setSelectedId(a.id)}
+                            className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                            title="点击选中"
+                          >
+                            {a.type === "line" ? (
+                              <Minus className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                            ) : a.type === "rect" ? (
+                              <Square className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                            ) : (
+                              <TypeIcon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                            )}
+                            <span className="truncate text-gray-700">{shapeLabel(a)}</span>
+                          </button>
+                          <button
+                            onClick={() => moveAnnotation(a.id, 1)}
+                            disabled={oi >= shapeList.length - 1}
+                            className="shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                            title="上移一层"
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => moveAnnotation(a.id, -1)}
+                            disabled={oi <= 0}
+                            className="shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                            title="下移一层"
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => removeAnnotation(a.id)}
+                            className="shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                            title="删除此标注"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
               {selected && (
                 <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4">
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-xs font-medium text-brand-700">
-                      已选中{selected.type === "line" ? "直线" : selected.type === "rect" ? "矩形" : "文本"}
+                      已选中{selected.type === "line" ? "直线" : selected.type === "rect" ? "矩形" : selected.type === "measure" ? "测量线" : "文本"}
                     </p>
                     <button
                       onClick={deleteSelected}
@@ -756,7 +1045,7 @@ export default function ImageEditPage() {
                   </div>
                   <p className="text-xs text-gray-500">
                     拖动可移动位置
-                    {selected.type === "line" ? "，拖动两端圆点可改方向与长度" : selected.type === "rect" ? "，拖动四角圆点可改大小" : ""}
+                    {selected.type === "line" || selected.type === "measure" ? "，拖动两端圆点可改方向与长度" : selected.type === "rect" ? "，拖动四角圆点可改大小" : ""}
                     {selected.type === "text" ? "，双击文字可重新输入" : ""}
                   </p>
                   {selected.type === "text" && (
