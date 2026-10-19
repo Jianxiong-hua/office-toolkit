@@ -1,6 +1,6 @@
 {
   "name": "sky-box-office-toolkit",
-  "version": "0.1.0",
+  "version": "1.10.0",
   "private": true,
   "description": "小蓝盒 (Sky-Box Office Toolkit) - 纯前端 PDF & 图片处理工具站",
   "scripts": {
@@ -12,6 +12,8 @@
     "validate": "tsc --noEmit"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "browser-image-compression": "^2.0.2",
     "clsx": "^2.1.1",
     "file-saver": "^2.0.5",

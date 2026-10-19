@@ -3,7 +3,7 @@ export const siteConfig = {
   shortName: "HaoXia",
   title: "浩匣免费在线办公工具箱 - HaoXia Office Toolkit",
   description:
-    "浩匣 (HaoXia) 免费在线 PDF 处理、图片处理工具集。所有处理均在浏览器本地完成，无需上传文件到服务器，保护您的隐私安全。",
+    "浩匣 (HaoXia) 免费在线 PDF 处理、图片处理、视频处理工具集。所有处理均在浏览器本地完成，无需上传文件到服务器，保护您的隐私安全。",
   url: "https://office-toolkit-9sv.pages.dev",
   ogImage: "https://office-toolkit-9sv.pages.dev/og-image.png",
   links: {
@@ -11,7 +11,7 @@ export const siteConfig = {
   },
 };
 
-export type ToolCategory = "image" | "pdf" | "design" | "file";
+export type ToolCategory = "image" | "pdf" | "design" | "file" | "video";
 
 export interface ToolMeta {
   id: string;

@@ -31,6 +31,7 @@
 |---|---|---|---|---|
 | `hao` | 2026-09-08 | `d:\AI agent\AI coding\office-toolkit` | 未记录（当时 `npm install` 可直接执行） | `C:\Users\hao\.ssh\id_ed25519` |
 | `hjx` | 2026-09-28 | `e:\AI work\office_toolkit\office-toolkit` | **不在 PATH**，用 IDE 自带 `C:\Users\hjx\.workbuddy\binaries\node\versions\22.22.2-2\`（v22.22.2 / npm 10.9.7） | `C:\Users\hjx\.ssh\id_ed25519` |
+| `bakbik` | 2026-10-18 | `g:\AgentWork\VibeCodingIdea\常用办公工具项目\office-toolkit` | **在 PATH**，`C:\Program Files\nodejs`（v20.11.0 / npm 10.2.4；注意 pdfjs-dist 要求 node ≥22.13，仅 EBADENGINE 警告，无害） | 未验证 |
 
 ## Git（SSH 已配好）
 - 远端为 SSH：`git@github.com:Jianxiong-hua/office-toolkit.git`，GitHub 账号 Jianxiong-hua，push/pull 免密。
@@ -63,6 +64,8 @@
 - `lucide-react` 提供图标；`tools.ts` 里 icon 是图标名字符串。**写错 icon 名不会报错**，`ToolCard` 会静默回退成 `Wrench` 扳手图标，新增工具时务必 grep 校验图标真实存在。
 
 ## 结构性陷阱（2026-10-08 踩坑后补充，2026-10-11 增补）
+- **同一文件的多个编辑必须串行**（2026-10-20 踩坑）：并行批次里对同一文件发多个 `replace_in_file` 会互相覆盖，且**全部返回成功、无报错**——曾因此静默丢失首页视频区块，tsc 查不出，只能靠 curl 页面 HTML 内容核对发现。并行只允许不同文件
+- **PowerShell 管道会把 curl 的 UTF-8 输出按 GBK 解码**：中文 grep 静默失败（匹配不到≠不存在）。验证页面中文内容必须 `curl -o 文件` 再用 node 读文件判断
 - **通用 `FileDropZone` 无法接受任意文件类型**：它基于 react-dropzone，accept 最终走 npm 包 `attr-accept`，该包对空数组 `.some()` 恒为 false，即传 `accept={{}}` 会**拒绝所有文件**。需要「任意类型」时只能自研 input + 拖拽组件。
 - **大文件文本视图必须虚拟滚动**：20MB / 16 字节每行 = 1,310,720 行，一次性渲染直接卡死。自研固定行高 windowing 约 40 行即可，无需引依赖；行高常量与 JSX 行内样式必须一致，否则像素换算错位。
 - **新增工具分类要改 4 处硬编码**：`config/site.ts` 的 `ToolCategory` → `config/tools.ts` 的 `toolsByCategory` → 首页 `app/page.tsx` 的**手写** `<section>`（不是遍历渲染）→ `components/tools/ToolCard.tsx` 的 `categoryColors` 与 `categoryIconBg` 两张表。漏改不报错，只会静默回退成灰色卡片。
@@ -78,3 +81,10 @@
 - `2026-10-11.md`——图片编辑器 v1+v2（像素调整/标注/缩放/文本）、dev-build 冲突、StrictMode updater、缩放闪烁与放大失效、工具故障绕行
 - `2026-10-12.md`——文档对比（Hirschberg diff、编码回退、并排双栏）、分割公式 bug、predev 被安全钩子拦截
 - `2026-10-17.md`——图片编辑标注增强（测量根因修复/画框填充色/工具栏图标组/图层列表与叠层）、ImageWorkbench 共享组件、PDF 拆分提取合并、滑杆撤销栈与 PowerShell 无 head 等踩坑
+- `2026-10-18.md`——视频工具设计与实现（ffmpeg.wasm 单例两工具复用、palettegen/paletteuse 出 GIF、截取并入压缩、lucide 无 FileVideo、AAC 不能进 WebM、ffmpeg ESM worker 须 webpack 打包）。设计文档：`docs/plans/2026-10-18-video-tools-design.md`
+
+## 视频工具技术要点（2026-10-18）
+- 转换内核 `src/lib/video/ffmpeg.ts`：wasm 核心走 unpkg CDN（`toBlobURL`，约 30MB），不入库；**不要传 `classWorkerURL`**——ESM worker 的相对导入只有 webpack 打包才能解析（blob URL 会断），实测打包为独立 chunk 正常
+- 音频编码按格式分流：MP4→`aac`，WebM→`libopus`（AAC 进 WebM 直接报错）
+- `@ffmpeg/core@0.12.10` 实测含 libx264 / libvpx-vp9 / aac / libopus / palettegen / paletteuse
+- ffmpeg `-loop`：0=无限循环，-1=播放一次

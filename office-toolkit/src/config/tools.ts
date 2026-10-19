@@ -140,6 +140,29 @@ export const tools: ToolMeta[] = [
     icon: "Columns2",
     tags: ["文档对比", "diff", "docx", "txt", "md"],
   },
+
+  // --- 视频工具 ---
+  {
+    id: "video-compress",
+    name: "视频压缩",
+    description:
+      "在线压缩 MP4/WebM 等视频，支持截取片段，自定义质量档位、分辨率与输出格式，本地转换不上传",
+    category: "video",
+    path: "/tools/video/compress/",
+    icon: "Video",
+    tags: ["压缩", "视频", "MP4", "WebM"],
+    featured: true,
+  },
+  {
+    id: "video-to-gif",
+    name: "视频转 GIF",
+    description:
+      "将视频片段转为 GIF 动图，支持起止时间、帧率、尺寸、颜色数与循环设置",
+    category: "video",
+    path: "/tools/video/gif/",
+    icon: "Film",
+    tags: ["GIF", "动图", "视频", "转换"],
+  },
 ];
 
 export const toolsByCategory = {
@@ -147,6 +170,7 @@ export const toolsByCategory = {
   pdf: tools.filter((t) => t.category === "pdf"),
   design: tools.filter((t) => t.category === "design"),
   file: tools.filter((t) => t.category === "file"),
+  video: tools.filter((t) => t.category === "video"),
 };
 
 export const getToolById = (id: string) => tools.find((t) => t.id === id);

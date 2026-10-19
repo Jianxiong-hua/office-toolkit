@@ -20,6 +20,12 @@ export function Header() {
           <Link href="#design-tools" className="text-gray-600 hover:text-brand-600 transition-colors">
             设计/计算
           </Link>
+          <Link href="#file-tools" className="text-gray-600 hover:text-brand-600 transition-colors">
+            文档与文件
+          </Link>
+          <Link href="#video-tools" className="text-gray-600 hover:text-brand-600 transition-colors">
+            视频工具
+          </Link>
         </nav>
       </div>
     </header>

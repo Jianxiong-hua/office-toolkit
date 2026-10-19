@@ -8,6 +8,7 @@ const categoryColors: Record<string, string> = {
   pdf: "bg-red-100 text-red-600",
   design: "bg-purple-100 text-purple-600",
   file: "bg-amber-100 text-amber-600",
+  video: "bg-blue-100 text-blue-600",
 };
 
 const categoryIconBg: Record<string, string> = {
@@ -15,6 +16,7 @@ const categoryIconBg: Record<string, string> = {
   pdf: "bg-red-50 group-hover:bg-red-100",
   design: "bg-purple-50 group-hover:bg-purple-100",
   file: "bg-amber-50 group-hover:bg-amber-100",
+  video: "bg-blue-50 group-hover:bg-blue-100",
 };
 
 export function ToolCard({ tool }: { tool: ToolMeta }) {

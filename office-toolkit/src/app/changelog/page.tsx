@@ -16,6 +16,16 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    version: "1.10.0",
+    date: "2026-10",
+    title: "新增「视频工具」分类：视频压缩与视频转 GIF",
+    changes: [
+      "新增「视频压缩」：基于 ffmpeg.wasm 在浏览器本地压缩视频，支持截取片段、质量档位（CRF 20/23/28）、分辨率缩放（原始/1080p/720p/480p）、输出格式（MP4/WebM）、倍速与编码速度设置，参数面板实时展示实际执行的 ffmpeg 命令",
+      "新增「视频转 GIF」：本地生成全局调色板 GIF，支持起止时间裁剪、帧率、输出宽度、最大颜色数、循环次数与倍速",
+      "新增「视频」分类与首页分类区块",
+    ],
+  },
+  {
     version: "1.9.1",
     date: "2026-10",
     title: "图片编辑标注增强",

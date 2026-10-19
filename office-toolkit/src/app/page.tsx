@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Image, FileText, Palette, Shield, FolderOpen } from "lucide-react";
+import { ArrowRight, Image, FileText, Palette, Shield, FolderOpen, Video } from "lucide-react";
 import { toolsByCategory } from "@/config/tools";
 import { ToolCard } from "@/components/tools/ToolCard";
 
@@ -19,7 +19,7 @@ export default function HomePage() {
             HaoXia Office Toolkit
           </p>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-gray-500 leading-relaxed">
-            PDF 合并拆分加水印、图片压缩转换裁剪 —— 全部在浏览器本地完成，
+            PDF 合并拆分加水印、图片压缩转换裁剪、视频压缩转 GIF —— 全部在浏览器本地完成，
             文件不会上传到任何服务器，隐私安全、永久免费。
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -107,6 +107,26 @@ export default function HomePage() {
           </div>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {toolsByCategory.file.map((tool) => (
+              <ToolCard key={tool.id} tool={tool} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 视频工具 */}
+      <section id="video-tools" className="py-16">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
+              <Video className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">视频工具</h2>
+              <p className="text-sm text-gray-500">压缩、转 GIF</p>
+            </div>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {toolsByCategory.video.map((tool) => (
               <ToolCard key={tool.id} tool={tool} />
             ))}
           </div>
