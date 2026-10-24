@@ -110,3 +110,62 @@ DropZone(accept: video/*, maxSize 200MB)
 1. `npm run validate`（tsc --noEmit）通过 → 验证：类型
 2. `npm run build` 通过 → 验证：构建（注意 dev server 运行中禁跑 build，见 MEMORY.md）
 3. ffmpeg.wasm 转换需真实浏览器环境：起 dev server 后用 10 秒左右测试视频实测两个工具 → 验证：功能（由用户执行）
+
+---
+
+# 补充设计（2026-10-20 用户确认）：新增「视频极速压缩」（WebCodecs 独立工具）
+
+## 背景
+
+用户提出：基于 WebCodecs 做**独立的**视频压缩工具，凭硬件加速的速度优势支持最大 **2GB** 视频。经方案讨论确认：命名「视频极速压缩」、四参数（质量/分辨率/截取/倍速）、core-mt 旧工具提速推迟到本工具提交之后单独做。
+
+## 与现有「视频压缩」的分工
+
+| | 视频压缩（既有） | 视频极速压缩（新） |
+|---|---|---|
+| 内核 | ffmpeg.wasm（单线程 wasm） | WebCodecs（硬件编解码） |
+| 输入 | 全格式、全编码 | 仅 MP4/MOV + H.264(avc1) |
+| 输出 | MP4 / WebM | 仅 MP4(H.264) |
+| 大小上限 | 200MB | 2GB |
+| 速度 | 慢（分钟级） | 快（常高于实时） |
+| 质量控制 | CRF 三档 | bpp 反推码率三档（high 0.14 / standard 0.09 / strong 0.05） |
+| 音频 | 重编码 AAC/Opus | AAC 原样 remux 不重编；倍速≠1 时无音轨 |
+| 失败时 | — | 不自动回落，报错并引导用户用「视频压缩」 |
+
+两工具页面互相放导流链接；新工具元信息（name/description/path）用户 2026-10-20 已确认。
+
+## 2GB 可行性设计
+
+- 输入：`file.stream()` 分块喂 mp4box（`MP4BoxBuffer.fromArrayBuffer(chunk, fileStart)`），**不整文件载入**
+- 解封装：mp4box `onSamples` 回调 + `releaseUsedSamples` 及时释放已用缓冲 → 内存有界
+- 背压：视频样本进自有队列，泵循环按 `decoder.decodeQueueSize > 20` 暂停消费，防止把整个文件灌进解码器
+- 输出：mp4-muxer `ArrayBufferTarget` 累积成 Blob（压缩后通常远小于输入）；`fastStart: false`（moov 置尾最省内存）
+- 遗留局限：极端情况（源已高度压缩+高质量档）输出接近 1GB+ 时内存吃紧，未来可加 `FileSystemWritableFileStreamTarget` 流式写盘（mp4-muxer 已内置该 Target）
+
+## 流水线（`src/lib/video/fastCompress.ts`）
+
+```
+file.stream() 分块 → mp4box.appendBuffer → onReady 校验（avc1 + VideoEncoder 支持）
+  → onSamples：首批估算 srcFps（样本 cts 差分）→ configureAll
+      · decoder.configure（codec 用 mp4box 的完整串，description = avcC 盒内容）
+      · encoder.configure（pickAvcCodec 按输出高度选 profile/level，isConfigSupported 先行）
+      · muxer（video + audio 轨，audio 参数来自 info.audioTracks[0]）
+  → pump：截取过滤 → 倍速丢帧（输出时间轴 grid）→ decoder.decode
+  → decoder.output：无需处理直接送编码；否则 OffscreenCanvas 缩放 + 轨道矩阵旋转烘焙 → VideoFrame → encode
+  → 音频样本：addAudioChunkRaw 原样进 muxer（时间戳平移 -trimStart）
+  → 收尾：排空队列 → decoder.flush → encoder.flush → muxer.finalize → Blob
+```
+
+关键实现点：
+- **旋转烘焙**：读取 tkhd matrix，非单位矩阵则用 DOMMatrix 推导 canvas 变换（移植 lyonbot/video-to-gif 的算法），输出为显示方向，muxer rotation 为 0
+- **倍速**：`outTs = (t - start)/speed` + grid 丢帧；减速时时间轴拉伸即真慢放（无需复制帧）；`speed≠1` 时 `keepAudio=false`（remux 无法变速）
+- **取消**：模块级 `cancelFastCompress()` → race 打断各 await + `cancelled` 标志中断循环
+- **进度**：analyzing=已读字节/文件大小（背压使该比值反映整条流水线）；encoding=flush 收尾；writing=finalize+组装
+- **类型坑**：encoder/muxer 在闭包内赋值，TS 控制流窄化追踪不到，使用处 `as` 取回联合类型
+
+## 验证计划
+
+1. `npm run validate` 通过 → 类型
+2. dev server 下页面编译 200、首页卡片渲染 → 编译与注册
+3. 浏览器实测（用户执行）：MP4 H.264 走快路径（看速度与体积对比）、MOV/旋转视频、截取+缩放+倍速组合、音画同步、取消、非 MP4 输入的错误引导、大文件（>500MB 提示）
+

@@ -32,16 +32,25 @@ export function VideoTrimEditor({
     effectiveEnd !== null ? Math.max(0, effectiveEnd - start) : null;
   const invalid = effectiveEnd !== null && effectiveEnd <= start;
 
+  /** 输入时间钳制到 [0, 总时长]；时长未知（0）时只钳下界 */
+  const clampTime = (v: number) => {
+    if (!Number.isFinite(v)) return 0;
+    return Math.min(Math.max(0, v), duration > 0 ? duration : Number.POSITIVE_INFINITY);
+  };
+
   const setStart = (v: number) => {
-    const s = Math.max(0, v);
-    // 开始时间不得晚于当前结束时间
-    if (effectiveEnd !== null && s >= effectiveEnd) return;
-    onChange(s, end);
+    const s = clampTime(v);
+    // 开始时间不得晚于当前结束时间：超出则贴到结束时间
+    onChange(effectiveEnd !== null ? Math.min(s, effectiveEnd) : s, end);
   };
 
   const setEnd = (v: number | null) => {
-    if (v !== null && v <= start) return;
-    onChange(start, v);
+    if (v === null) {
+      onChange(start, null);
+      return;
+    }
+    // 结束时间不得早于开始时间：不足则贴到开始时间
+    onChange(start, Math.max(clampTime(v), start));
   };
 
   return (

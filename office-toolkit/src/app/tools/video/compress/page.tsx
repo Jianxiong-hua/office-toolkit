@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Download, Loader2, RotateCcw, X } from "lucide-react";
 import { ToolLayout } from "@/components/layout/ToolLayout";
 import { FileDropZone } from "@/components/tools/FileDropZone";
@@ -165,21 +166,33 @@ export default function VideoCompressPage() {
     >
       <div className="space-y-6">
         {!file && (
-          <FileDropZone
-            accept={{
-              "video/mp4": [".mp4"],
-              "video/webm": [".webm"],
-              "video/quicktime": [".mov"],
-              "video/x-matroska": [".mkv"],
-              "video/x-msvideo": [".avi"],
-            }}
-            maxFiles={1}
-            maxSize={MAX_FILE_SIZE}
-            onFilesAdded={async (files) => {
-              if (files[0]) await handleFile(files[0].file);
-            }}
-            label="拖拽视频到此处，或点击选择（MP4 / WebM / MOV / MKV，≤200MB）"
-          />
+          <>
+            <FileDropZone
+              accept={{
+                "video/mp4": [".mp4"],
+                "video/webm": [".webm"],
+                "video/quicktime": [".mov"],
+                "video/x-matroska": [".mkv"],
+                "video/x-msvideo": [".avi"],
+              }}
+              maxFiles={1}
+              maxSize={MAX_FILE_SIZE}
+              onFilesAdded={async (files) => {
+                if (files[0]) await handleFile(files[0].file);
+              }}
+              label="拖拽视频到此处，或点击选择（MP4 / WebM / MOV / MKV，≤200MB）"
+            />
+            <p className="text-xs text-gray-400">
+              视频是 MP4(H.264) 且想更快？可试试
+              <Link
+                href="/tools/video/compress-fast/"
+                className="mx-1 text-brand-600 hover:underline"
+              >
+                视频极速压缩
+              </Link>
+              （硬件加速，支持 4GB，但仅支持 MP4/H.264 输入与 MP4 输出）
+            </p>
+          </>
         )}
 
         {file && (

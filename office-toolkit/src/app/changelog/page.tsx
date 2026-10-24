@@ -16,6 +16,15 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    version: "1.11.0",
+    date: "2026-10",
+    title: "新增「视频极速压缩」工具",
+    changes: [
+      "新增「视频极速压缩」：基于 WebCodecs 硬件加速，支持最大 4GB 的 MP4/MOV（H.264）视频，可截取片段、缩放分辨率、0.5~3 倍速，处理全程在浏览器本地完成",
+      "GB 级片源按需读取索引与样本数据，无需整体载入内存；硬件解码与硬件编码均优先启用",
+    ],
+  },
+  {
     version: "1.10.0",
     date: "2026-10",
     title: "新增「视频工具」分类：视频压缩与视频转 GIF",

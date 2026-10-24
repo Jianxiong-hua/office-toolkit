@@ -82,9 +82,16 @@
 - `2026-10-12.md`——文档对比（Hirschberg diff、编码回退、并排双栏）、分割公式 bug、predev 被安全钩子拦截
 - `2026-10-17.md`——图片编辑标注增强（测量根因修复/画框填充色/工具栏图标组/图层列表与叠层）、ImageWorkbench 共享组件、PDF 拆分提取合并、滑杆撤销栈与 PowerShell 无 head 等踩坑
 - `2026-10-18.md`——视频工具设计与实现（ffmpeg.wasm 单例两工具复用、palettegen/paletteuse 出 GIF、截取并入压缩、lucide 无 FileVideo、AAC 不能进 WebM、ffmpeg ESM worker 须 webpack 打包）。设计文档：`docs/plans/2026-10-18-video-tools-design.md`
+- `2026-10-25.md`——视频极速压缩闭环：架构重构（mp4box 只解析元数据 + 按 offset 随机读、跳过 mdat）、PCE 音轨解码失败、编解码显式 prefer-hardware、倍速时间轴与拖动卡死、事件驱动送帧、4GB 上限、截取时间钳制
 
 ## 视频工具技术要点（2026-10-18）
 - 转换内核 `src/lib/video/ffmpeg.ts`：wasm 核心走 unpkg CDN（`toBlobURL`，约 30MB），不入库；**不要传 `classWorkerURL`**——ESM worker 的相对导入只有 webpack 打包才能解析（blob URL 会断），实测打包为独立 chunk 正常
 - 音频编码按格式分流：MP4→`aac`，WebM→`libopus`（AAC 进 WebM 直接报错）
 - `@ffmpeg/core@0.12.10` 实测含 libx264 / libvpx-vp9 / aac / libopus / palettegen / paletteuse
 - ffmpeg `-loop`：0=无限循环，-1=播放一次
+- **「视频极速压缩」（2026-10-20 新增，2026-10-25 重构）**：`src/lib/video/fastCompress.ts`，WebCodecs 硬件加速，仅 MP4/MOV+H.264 输入、MP4 输出、**≤4GB**；倍速≠1 无音轨；不自动回落，报错引导用「视频压缩」
+  - **mp4box 只当元数据解析器**（`createFile(false)` 不保留 mdat）：喂文件头后按顶层 box 跳读，遇 mdat 直接跳过、只喂 moov，再用 `getTrackSamplesInfo` 拿样本表；样本数据按 `sample.offset` 用 `File.slice` 随机读。实测 2.75GB 片源 **349ms / 仅读 4.86MB** 拿到索引（旧实现要读完整个 mdat）
+  - **编解码都要显式 `prefer-hardware`**：`no-preference` 下浏览器遇到硬编不支持的配置（如 4K 需 High 5.1）会**静默退软编**，而 `isConfigSupported` 仍返回 true。4K 实测 28fps → 42fps；1080p 两侧命中硬编后 160fps
+  - **AAC 封装必须透传源 AudioSpecificConfig**（首块 `addAudioChunkRaw(..., { decoderConfig: { description } })`）：用 PCE 描述声道的片源（`channelConfiguration=0`），按 `numberOfChannels` 生成的默认配置会让整条音轨报 `channel element not allocated`
+  - **时间轴**：`duration` 只能取相邻块的 pts 差——`chunk.duration` 是「源帧时长/speed」，与抽帧后的真实间隔不同源，采信会让 DTS 持续落后 PTS、ctts 累积、倍速输出拖动进度条卡死；输出帧率 = `srcFps × min(1, speed)`（倍速帧率不变，慢放才变小）
+  - **等编码器槽位靠 `encoder.output` 回调唤醒**，不要 `sleep` 轮询：setTimeout 有 2~4ms 抖动，每帧赔一次就把 160fps 压到 ~100fps（表现为前期快、后期掉速）

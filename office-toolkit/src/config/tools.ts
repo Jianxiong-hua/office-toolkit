@@ -163,6 +163,16 @@ export const tools: ToolMeta[] = [
     icon: "Film",
     tags: ["GIF", "动图", "视频", "转换"],
   },
+  {
+    id: "video-compress-fast",
+    name: "视频极速压缩",
+    description:
+      "基于 WebCodecs 硬件加速的极速压缩，支持最大 4GB 的 MP4(H.264) 视频，本地转换不上传",
+    category: "video",
+    path: "/tools/video/compress-fast/",
+    icon: "Zap",
+    tags: ["压缩", "视频", "极速", "WebCodecs", "MP4"],
+  },
 ];
 
 export const toolsByCategory = {

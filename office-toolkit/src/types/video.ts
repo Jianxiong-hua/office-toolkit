@@ -78,3 +78,35 @@ export interface VideoMeta {
  * - writing：ffmpeg 已执行完，正在写文件/读回结果
  */
 export type VideoConvertPhase = "analyzing" | "encoding" | "writing";
+
+/* ---------------- 视频极速压缩（WebCodecs） ---------------- */
+
+/** 极速压缩质量档位（WebCodecs 无 CRF，按 bpp 反推码率） */
+export type FastQualityPreset = "high" | "standard" | "strong";
+
+export interface VideoFastCompressOptions {
+  quality: FastQualityPreset;
+  resolution: VideoResolution;
+  trimStart: number;
+  /** null = 到片尾 */
+  trimEnd: number | null;
+  /** 倍速：0.5 ~ 2，1 = 原速。≠1 时输出无音轨（remux 无法变速） */
+  speed: number;
+}
+
+export interface VideoFastCompressResult {
+  blob: Blob;
+  originalSize: number;
+  outputSize: number;
+  filename: string;
+  /** 输出宽高（已烘焙旋转） */
+  width: number;
+  height: number;
+  fps: number;
+  /** 是否保留音轨 */
+  hasAudio: boolean;
+  /** 实际使用的视频码率（bps） */
+  bitrate: number;
+  /** 处理耗时（毫秒，从进入到产出，含失败重试） */
+  elapsedMs: number;
+}
