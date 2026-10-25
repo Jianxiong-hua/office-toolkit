@@ -28,7 +28,10 @@ import type {
   VideoMeta,
 } from "@/types/video";
 
-const MAX_FILE_SIZE = 200 * 1024 * 1024;
+/** 兼容模式（ffmpeg）上限：整个文件要写进 wasm 内存，与视频压缩工具同口径 */
+const COMPAT_MAX_FILE_SIZE = 200 * 1024 * 1024;
+/** 极速模式上限：mp4box 只跳读索引、样本按需随机读，与「视频极速压缩」同口径 */
+const FAST_MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024;
 
 const COLOR_OPTIONS: { value: VideoGifOptions["maxColors"]; label: string }[] = [
   { value: 255, label: "255 色（最佳）" },
@@ -91,6 +94,8 @@ export default function VideoToGifPage() {
 
   /** 当前文件能否用极速模式（不能时开关禁用并说明原因） */
   const fastAvailable = fastSupported && !!file && isFastGifCandidate(file);
+  /** 超过兼容模式上限的文件只能走极速模式：开关锁定为勾选、不允许取消 */
+  const fastLocked = !!file && file.size > COMPAT_MAX_FILE_SIZE;
 
   useEffect(() => {
     return () => {
@@ -104,6 +109,13 @@ export default function VideoToGifPage() {
   }, [resultUrl]);
 
   const handleFile = useCallback(async (f: File) => {
+    // 超过兼容模式上限的文件只能走极速模式；极速模式又只吃 MP4/MOV(H.264)
+    if (f.size > COMPAT_MAX_FILE_SIZE && !isFastGifCandidate(f)) {
+      setError(
+        "超过 200MB 的文件需要使用极速模式，而极速模式仅支持 H.264 编码的 MP4/MOV。请改用 MP4 文件，或先用「视频压缩」缩小体积"
+      );
+      return;
+    }
     setError(null);
     setResult(null);
     setStatus("idle");
@@ -144,6 +156,11 @@ export default function VideoToGifPage() {
 
   const handleConvert = useCallback(async () => {
     if (!file) return;
+    // 防御：超大文件绝不能进兼容模式（会整份写进 wasm 内存）
+    if (!fastMode && file.size > COMPAT_MAX_FILE_SIZE) {
+      setError("超过 200MB 的文件请使用极速模式");
+      return;
+    }
     // 极速模式不需要加载 ffmpeg 引擎，直接进入转换
     setStatus(fastMode ? "converting" : "loading");
     setError(null);
@@ -219,11 +236,12 @@ export default function VideoToGifPage() {
               "video/x-msvideo": [".avi"],
             }}
             maxFiles={1}
-            maxSize={MAX_FILE_SIZE}
+            maxSize={FAST_MAX_FILE_SIZE}
+            maxSizeLabel="极速模式最大 4GB，兼容模式最大 200MB"
             onFilesAdded={async (files) => {
               if (files[0]) await handleFile(files[0].file);
             }}
-            label="拖拽视频到此处，或点击选择（MP4 / WebM / MOV / MKV，≤200MB）"
+            label="拖拽视频到此处，或点击选择（MP4 / WebM / MOV / MKV）"
           />
         )}
 
@@ -288,7 +306,7 @@ export default function VideoToGifPage() {
                   <input
                     type="checkbox"
                     checked={fastMode}
-                    disabled={!fastAvailable}
+                    disabled={!fastAvailable || fastLocked}
                     onChange={(e) => setFastMode(e.target.checked)}
                     className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 disabled:opacity-40"
                   />
@@ -301,7 +319,9 @@ export default function VideoToGifPage() {
                     ? "当前浏览器不支持 WebCodecs，无法使用极速模式"
                     : !fastAvailable
                       ? "仅支持 MP4 / MOV 文件，其他格式请使用兼容模式"
-                      : "浏览器原生解码 + 直接编码，通常快数倍；仅支持 H.264 编码的 MP4/MOV，转换期间页面可能短暂卡顿"}
+                      : fastLocked
+                        ? "文件超过 200MB，只能使用极速模式（兼容模式需把整个文件载入内存）"
+                        : "浏览器原生解码 + 直接编码，通常快数倍；仅支持 H.264 编码的 MP4/MOV，转换期间页面可能短暂卡顿"}
                 </p>
               </div>
 

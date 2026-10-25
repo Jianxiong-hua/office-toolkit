@@ -9,6 +9,8 @@ interface FileDropZoneProps {
   accept: Record<string, string[]>;
   maxFiles?: number;
   maxSize?: number; // bytes
+  /** 覆盖默认的「单文件最大 xxxMB」提示（不同处理路径上限不同时用） */
+  maxSizeLabel?: string;
   onFilesAdded: (files: FileItem[]) => void;
   onRejected?: (message: string) => void;
   label?: string;
@@ -28,6 +30,7 @@ export function FileDropZone({
   accept,
   maxFiles = Infinity,
   maxSize = 100 * 1024 * 1024,
+  maxSizeLabel,
   onFilesAdded,
   onRejected,
   label = "拖拽文件到此处，或点击选择",
@@ -133,7 +136,8 @@ export function FileDropZone({
         </div>
         <p className="mt-4 text-sm text-gray-500">{label}</p>
         <p className="mt-1 text-xs text-gray-400">
-          支持拖拽上传，单文件最大 {(maxSize / 1024 / 1024).toFixed(0)}MB
+          支持拖拽上传，
+          {maxSizeLabel ?? `单文件最大 ${(maxSize / 1024 / 1024).toFixed(0)}MB`}
         </p>
       </div>
 

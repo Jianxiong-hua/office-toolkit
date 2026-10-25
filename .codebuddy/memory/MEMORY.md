@@ -103,3 +103,4 @@
 - **WebCodecs GIF 路径：软件解码快于硬件解码**（硬解帧是 GPU 纹理，`drawImage` 到 CPU 位图要回读）：draw 16.5→0.4 ms、read 0.15→7.4 ms，合计省 8.9 ms/帧；且 `willReadFrequently: true` 在此是负优化（read 从 7.5 降到 3.3 ms 靠关掉它）
 - `gifenc` 的 `quantize` 是 GIF 编码绝对瓶颈（约 applyPalette+LZW 的 7 倍）；降采样无收益（成本随颜色分布而非像素数变化），只能复用调色板，16 帧后收益饱和
 - `ffmpeg.writeFile` 会 **transfer** `ArrayBuffer` 所有权，源 buffer 被 detach；同一份数据要写两次时必须重新 `fetchFile`
+- 视频转 GIF 的文件上限按模式分流：**极速模式 4GB**（按需随机读样本）、**兼容模式 200MB**（整份写进 wasm 内存）；>200MB 时强制极速模式并锁定开关，非 MP4/MOV 直接拒绝
