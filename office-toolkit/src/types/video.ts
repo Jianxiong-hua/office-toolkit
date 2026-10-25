@@ -34,6 +34,8 @@ export interface VideoCompressResult {
   originalSize: number;
   outputSize: number;
   filename: string;
+  /** 处理耗时（毫秒，从读取元信息到产出） */
+  elapsedMs?: number;
 }
 
 /** GIF 循环方式 */
@@ -61,6 +63,8 @@ export interface VideoGifResult {
   width: number;
   height: number;
   frameCount: number;
+  /** 处理耗时（毫秒，从点击转换到产出） */
+  elapsedMs?: number;
 }
 
 /** 视频元信息（由 <video> 元素读取） */

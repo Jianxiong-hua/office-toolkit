@@ -1,6 +1,6 @@
 {
   "name": "sky-box-office-toolkit",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "private": true,
   "description": "小蓝盒 (Sky-Box Office Toolkit) - 纯前端 PDF & 图片处理工具站",
   "scripts": {

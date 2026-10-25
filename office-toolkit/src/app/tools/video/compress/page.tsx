@@ -10,7 +10,11 @@ import { ErrorAlert } from "@/components/common/ErrorAlert";
 import { VideoTrimEditor } from "@/components/tools/VideoTrimEditor";
 import { compressVideo, buildCompressCommand } from "@/lib/video/compress";
 import { readVideoMeta } from "@/lib/video/probe";
-import { cancelConversion, ensureLoaded } from "@/lib/video/ffmpeg";
+import {
+  cancelConversion,
+  ensureLoaded,
+  getFfmpegCoreMode,
+} from "@/lib/video/ffmpeg";
 import { downloadBlob, formatFileSize } from "@/lib/file";
 import { AppError } from "@/types";
 import type {
@@ -24,6 +28,15 @@ import type {
 } from "@/types/video";
 
 const MAX_FILE_SIZE = 200 * 1024 * 1024;
+
+/** 「视频极速压缩」能接受的输入容器（按扩展名粗筛，编码是否为 H.264 由该工具自行判断） */
+const FAST_INPUT_EXTS = ["mp4", "m4v", "mov"];
+
+function isFastCandidate(f: File): boolean {
+  if (typeof VideoEncoder === "undefined") return false;
+  const ext = f.name.slice(f.name.lastIndexOf(".") + 1).toLowerCase();
+  return FAST_INPUT_EXTS.includes(ext);
+}
 
 const QUALITY_LABELS: Record<VideoQualityPreset, string> = {
   high: "高质量（CRF 20，接近原画）",
@@ -71,6 +84,8 @@ export default function VideoCompressPage() {
   const [result, setResult] = useState<VideoCompressResult | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 当前文件是否可能适用「视频极速压缩」 */
+  const [canFast, setCanFast] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -94,6 +109,7 @@ export default function VideoCompressPage() {
     setMeta(null);
     setOptions((prev) => ({ ...prev, trimStart: 0, trimEnd: null }));
     setFile(f);
+    setCanFast(isFastCandidate(f));
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(f);
@@ -120,6 +136,7 @@ export default function VideoCompressPage() {
     setError(null);
     setStatus("idle");
     setProgress(0);
+    setCanFast(false);
   }, []);
 
   const handleConvert = useCallback(async () => {
@@ -231,6 +248,18 @@ export default function VideoCompressPage() {
                   </>
                 )}
               </div>
+              {canFast && (
+                <p className="text-xs text-brand-600">
+                  若为 H.264 编码，改用
+                  <Link
+                    href="/tools/video/compress-fast/"
+                    className="mx-1 font-medium underline"
+                  >
+                    视频极速压缩
+                  </Link>
+                  通常快数十倍（硬件加速，仅支持 MP4 输入与 MP4 输出）。
+                </p>
+              )}
               {file.size > 100 * 1024 * 1024 && (
                 <p className="text-xs text-amber-600">
                   文件较大（&gt;100MB），转换可能需要数分钟，请耐心等待。
@@ -468,6 +497,12 @@ export default function VideoCompressPage() {
               <p>
                 节省空间: <strong>{savedRatio.toFixed(1)}%</strong>
               </p>
+              {result.elapsedMs !== undefined && (
+                <p className="text-xs text-green-600">
+                  耗时 {(result.elapsedMs / 1000).toFixed(1)} 秒（
+                  {getFfmpegCoreMode() === "multi" ? "多线程" : "单线程"}）
+                </p>
+              )}
             </div>
             <button
               onClick={handleDownload}

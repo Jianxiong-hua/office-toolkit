@@ -115,6 +115,7 @@ export async function compressVideo(
   options: VideoCompressOptions,
   onProgress?: (ratio: number) => void
 ): Promise<VideoCompressResult> {
+  const startedAt = performance.now();
   const meta = await readVideoMeta(file);
   const { fetchFile } = await import("@ffmpeg/util");
 
@@ -139,5 +140,6 @@ export async function compressVideo(
     originalSize: file.size,
     outputSize: data.byteLength,
     filename,
+    elapsedMs: performance.now() - startedAt,
   };
 }

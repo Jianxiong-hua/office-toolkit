@@ -15,6 +15,7 @@ export async function videoToGif(
   options: VideoGifOptions,
   onProgress?: (ratio: number, phase: VideoConvertPhase) => void
 ): Promise<VideoGifResult> {
+  const startedAt = performance.now();
   const meta = await readVideoMeta(file);
   const { fetchFile } = await import("@ffmpeg/util");
 
@@ -27,15 +28,17 @@ export async function videoToGif(
     throw new AppError("INVALID_INPUT", "截取结束时间必须晚于开始时间");
   }
 
-  // 滤镜链：倍速(setpts) → 抽帧(fps) → 缩放( lanczos ) → 全局调色板(split+palettegen/paletteuse)
+  // 滤镜链：倍速(setpts) → 抽帧(fps) → 缩放(bicubic) → 全局调色板(split+palettegen/paletteuse)
   // setpts 必须在 fps 之前：先压缩时间轴，再按新时间轴抽帧，倍速后帧率才正确
+  // 缩放用 bicubic 而非 lanczos：wasm 里 lanczos 成本高，GIF 仅 256 色，锐度收益不可见
   const filters: string[] = [];
   if (options.speed !== 1) filters.push(`setpts=PTS/${options.speed}`);
   filters.push(`fps=${options.fps}`);
   // min(iw, W)：只缩不放，小视频不会被放大成模糊大图
-  filters.push(`scale=min(iw\\,${options.width}):-2:flags=lanczos`);
+  filters.push(`scale=min(iw\\,${options.width}):-2:flags=bicubic`);
+  // stats_mode=diff：只统计画面变化的像素，静态多的素材统计更快
   filters.push(
-    `split[s0][s1];[s0]palettegen=max_colors=${options.maxColors}[p];[s1][p]paletteuse=dither=bayer`
+    `split[s0][s1];[s0]palettegen=max_colors=${options.maxColors}:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer`
   );
 
   const args: string[] = ["-ss", String(start), "-i", inputName];
@@ -43,23 +46,27 @@ export async function videoToGif(
   args.push(
     "-vf",
     filters.join(","),
+    "-an", // GIF 无音轨，少解析一路
     "-loop",
     options.loop === "infinite" ? "0" : "-1", // 0=无限循环，-1=播放一次
     OUTPUT_NAME
   );
+
+  const duration = end !== null ? end - start : meta.duration > 0 ? meta.duration - start : 0;
 
   const data = await runConversion({
     inputName,
     inputData: await fetchFile(file),
     args,
     outputName: OUTPUT_NAME,
+    // 这条滤镜链必须单线程：多线程 core 在 palettegen/paletteuse 上会严重变慢
+    forceSingleThread: true,
     onProgress,
   });
 
   // 输出宽高与帧数（信息展示用）：与 scale=min(iw,W):-2 的实际输出保持一致
   const outWidth = Math.min(options.width, meta.width);
   const outHeight = Math.max(2, Math.round((meta.height * outWidth) / meta.width / 2) * 2);
-  const duration = end !== null ? end - start : meta.duration > 0 ? meta.duration - start : 0;
   const frameCount =
     duration > 0 ? Math.max(1, Math.round((duration / options.speed) * options.fps)) : 0;
 
@@ -71,5 +78,6 @@ export async function videoToGif(
     width: outWidth,
     height: outHeight,
     frameCount,
+    elapsedMs: performance.now() - startedAt,
   };
 }

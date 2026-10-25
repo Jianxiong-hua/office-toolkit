@@ -82,7 +82,7 @@
 - `2026-10-12.md`——文档对比（Hirschberg diff、编码回退、并排双栏）、分割公式 bug、predev 被安全钩子拦截
 - `2026-10-17.md`——图片编辑标注增强（测量根因修复/画框填充色/工具栏图标组/图层列表与叠层）、ImageWorkbench 共享组件、PDF 拆分提取合并、滑杆撤销栈与 PowerShell 无 head 等踩坑
 - `2026-10-18.md`——视频工具设计与实现（ffmpeg.wasm 单例两工具复用、palettegen/paletteuse 出 GIF、截取并入压缩、lucide 无 FileVideo、AAC 不能进 WebM、ffmpeg ESM worker 须 webpack 打包）。设计文档：`docs/plans/2026-10-18-video-tools-design.md`
-- `2026-10-25.md`——视频极速压缩闭环：架构重构（mp4box 只解析元数据 + 按 offset 随机读、跳过 mdat）、PCE 音轨解码失败、编解码显式 prefer-hardware、倍速时间轴与拖动卡死、事件驱动送帧、4GB 上限、截取时间钳制
+- `2026-10-25.md`——视频极速压缩闭环：架构重构（mp4box 只解析元数据 + 按 offset 随机读、跳过 mdat）、PCE 音轨解码失败、编解码显式 prefer-hardware、倍速时间轴与拖动卡死、事件驱动送帧、4GB 上限、截取时间钳制；**同日晚**：视频压缩/GIF 提速（core-mt 在 GIF 滤镜链不可用、WebCodecs 极速 GIF 的逐项实测、软解胜硬解、willReadFrequently 负优化、ffmpeg 阶段进度不可得、两遍法回滚）
 
 ## 视频工具技术要点（2026-10-18）
 - 转换内核 `src/lib/video/ffmpeg.ts`：wasm 核心走 unpkg CDN（`toBlobURL`，约 30MB），不入库；**不要传 `classWorkerURL`**——ESM worker 的相对导入只有 webpack 打包才能解析（blob URL 会断），实测打包为独立 chunk 正常
@@ -95,3 +95,11 @@
   - **AAC 封装必须透传源 AudioSpecificConfig**（首块 `addAudioChunkRaw(..., { decoderConfig: { description } })`）：用 PCE 描述声道的片源（`channelConfiguration=0`），按 `numberOfChannels` 生成的默认配置会让整条音轨报 `channel element not allocated`
   - **时间轴**：`duration` 只能取相邻块的 pts 差——`chunk.duration` 是「源帧时长/speed」，与抽帧后的真实间隔不同源，采信会让 DTS 持续落后 PTS、ctts 累积、倍速输出拖动进度条卡死；输出帧率 = `srcFps × min(1, speed)`（倍速帧率不变，慢放才变小）
   - **等编码器槽位靠 `encoder.output` 回调唤醒**，不要 `sleep` 轮询：setTimeout 有 2~4ms 抖动，每帧赔一次就把 160fps 压到 ~100fps（表现为前期快、后期掉速）
+
+### 视频工具提速（2026-10-25 第二轮，版本 1.11.1）
+- **`@ffmpeg/core-mt` 不能用在 GIF 的 `split+palettegen+paletteuse` 链上**：同一 750 帧素材，单线程 155.7 秒完成，多线程（16 核）295 秒仍停在分析阶段（更早一次 918 秒未出帧）。重度滤镜链必须 `forceSingleThread`；视频压缩走多线程无碍
+- COOP/COEP 由 `public/_headers` 提供（CF Pages 读取，`next build` 输出到 `out/_headers`），是 `SharedArrayBuffer`/core-mt 的前提；本地 `next dev` 不应用该文件 → 永远单线程
+- **ffmpeg.wasm 拿不到「无输出帧阶段」的中间进度**，三条路都实测排除：progress 事件按输出时间戳；统计行用 `\r` 不成行；`-progress pipe:1` 的 stdout 不经日志回调。只能靠页面秒表兜底
+- **WebCodecs GIF 路径：软件解码快于硬件解码**（硬解帧是 GPU 纹理，`drawImage` 到 CPU 位图要回读）：draw 16.5→0.4 ms、read 0.15→7.4 ms，合计省 8.9 ms/帧；且 `willReadFrequently: true` 在此是负优化（read 从 7.5 降到 3.3 ms 靠关掉它）
+- `gifenc` 的 `quantize` 是 GIF 编码绝对瓶颈（约 applyPalette+LZW 的 7 倍）；降采样无收益（成本随颜色分布而非像素数变化），只能复用调色板，16 帧后收益饱和
+- `ffmpeg.writeFile` 会 **transfer** `ArrayBuffer` 所有权，源 buffer 被 detach；同一份数据要写两次时必须重新 `fetchFile`

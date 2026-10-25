@@ -8,8 +8,17 @@ import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ErrorAlert } from "@/components/common/ErrorAlert";
 import { VideoTrimEditor } from "@/components/tools/VideoTrimEditor";
 import { videoToGif } from "@/lib/video/gif";
+import {
+  cancelFastGif,
+  fastGifVideo,
+  isFastGifCandidate,
+} from "@/lib/video/fastGif";
 import { readVideoMeta } from "@/lib/video/probe";
-import { cancelConversion, ensureLoaded } from "@/lib/video/ffmpeg";
+import {
+  cancelConversion,
+  ensureLoaded,
+  getFfmpegCoreMode,
+} from "@/lib/video/ffmpeg";
 import { downloadBlob, formatFileSize } from "@/lib/file";
 import { AppError } from "@/types";
 import type {
@@ -28,7 +37,7 @@ const COLOR_OPTIONS: { value: VideoGifOptions["maxColors"]; label: string }[] = 
   { value: 32, label: "32 色（最小）" },
 ];
 
-const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
 type Status = "idle" | "loading" | "converting" | "done" | "error";
 
@@ -53,8 +62,35 @@ export default function VideoToGifPage() {
   const [result, setResult] = useState<VideoGifResult | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 极速模式：走 WebCodecs 硬件解码，仅支持 MP4/MOV(H.264) */
+  const [fastMode, setFastMode] = useState(false);
+  /** 上一次成功转换实际走的路径（结果显示用，避免用户切开关后显示错乱） */
+  const [resultEngine, setResultEngine] = useState<"fast" | "compat">("compat");
+  /** 浏览器是否支持 WebCodecs（放到 effect 里判断，避免静态导出的 hydration 不一致） */
+  const [fastSupported, setFastSupported] = useState(false);
+  /** 转换已用时（秒）：ffmpeg 拿不到中间进度时，至少让用户看到任务在走 */
+  const [elapsedSec, setElapsedSec] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    setFastSupported(typeof VideoDecoder !== "undefined");
+  }, []);
+
+  // 转换期间的秒表：引擎加载（loading）不计，真正开始处理才计时
+  useEffect(() => {
+    if (status !== "converting") return;
+    const t0 = performance.now();
+    setElapsedSec(0);
+    const id = setInterval(
+      () => setElapsedSec(Math.floor((performance.now() - t0) / 1000)),
+      500
+    );
+    return () => clearInterval(id);
+  }, [status]);
+
+  /** 当前文件能否用极速模式（不能时开关禁用并说明原因） */
+  const fastAvailable = fastSupported && !!file && isFastGifCandidate(file);
 
   useEffect(() => {
     return () => {
@@ -74,6 +110,8 @@ export default function VideoToGifPage() {
     setProgress(0);
     setMeta(null);
     setOptions((prev) => ({ ...prev, trimStart: 0, trimEnd: null }));
+    // 默认勾选极速模式：文件支持（MP4/MOV + WebCodecs）时才勾，否则保持关闭并显示禁用原因
+    setFastMode(isFastGifCandidate(f));
     setFile(f);
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -101,22 +139,32 @@ export default function VideoToGifPage() {
     setError(null);
     setStatus("idle");
     setProgress(0);
+    setFastMode(false);
   }, []);
 
   const handleConvert = useCallback(async () => {
     if (!file) return;
-    setStatus("loading");
+    // 极速模式不需要加载 ffmpeg 引擎，直接进入转换
+    setStatus(fastMode ? "converting" : "loading");
     setError(null);
     setProgress(0);
     setPhase("analyzing");
     try {
-      await ensureLoaded();
-      setStatus("converting");
-      const r = await videoToGif(file, options, (ratio, p) => {
+      const onProgress = (ratio: number, p: VideoConvertPhase) => {
         setProgress(ratio);
         setPhase(p);
-      });
+      };
+      let r: VideoGifResult;
+      if (fastMode) {
+        r = await fastGifVideo(file, options, onProgress, meta?.duration ?? 0);
+      } else {
+        // 兼容模式固定单线程（多线程 core 在这条滤镜链上会严重变慢）
+        await ensureLoaded({ multiThread: false });
+        setStatus("converting");
+        r = await videoToGif(file, options, onProgress);
+      }
       setResult(r);
+      setResultEngine(fastMode ? "fast" : "compat");
       setResultUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return URL.createObjectURL(r.blob);
@@ -130,13 +178,30 @@ export default function VideoToGifPage() {
       setError(e instanceof AppError ? e.message : "转换失败，请重试或更换文件");
       setStatus("error");
     }
-  }, [file, options]);
+  }, [file, options, fastMode, meta]);
 
   const handleDownload = useCallback(() => {
     if (result) downloadBlob(result.blob, result.filename);
   }, [result]);
 
   const getCurrentTime = useCallback(() => videoRef.current?.currentTime ?? 0, []);
+
+  /** 进度区主文案：极速模式与 ffmpeg 路径的阶段含义不同 */
+  const phaseText = (() => {
+    if (status === "loading") return "首次使用需加载转换引擎（约 30MB），请稍候…";
+    if (fastMode) {
+      if (phase === "analyzing") return "正在解析视频…";
+      if (phase === "writing") return "正在写入 GIF 文件…";
+      return `编码中 ${Math.round(progress * 100)}%`;
+    }
+    if (phase === "analyzing") {
+      const pct = Math.round(progress * 100);
+      if (pct > 0) return `第一阶段：分析视频帧，生成全局调色板… ${pct}%`;
+      return `第一阶段：分析视频帧，生成全局调色板… 已用 ${elapsedSec} 秒`;
+    }
+    if (phase === "writing") return "正在写入 GIF 文件…";
+    return `第二阶段：量化编码 ${Math.round(progress * 100)}%`;
+  })();
 
   return (
     <ToolLayout
@@ -217,6 +282,28 @@ export default function VideoToGifPage() {
                 }
                 getCurrentTime={getCurrentTime}
               />
+
+              <div className="rounded-xl bg-gray-50 p-4 space-y-1.5">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={fastMode}
+                    disabled={!fastAvailable}
+                    onChange={(e) => setFastMode(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 disabled:opacity-40"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    极速模式（WebCodecs 解码）
+                  </span>
+                </label>
+                <p className="pl-7 text-xs text-gray-500">
+                  {!fastSupported
+                    ? "当前浏览器不支持 WebCodecs，无法使用极速模式"
+                    : !fastAvailable
+                      ? "仅支持 MP4 / MOV 文件，其他格式请使用兼容模式"
+                      : "浏览器原生解码 + 直接编码，通常快数倍；仅支持 H.264 编码的 MP4/MOV，转换期间页面可能短暂卡顿"}
+                </p>
+              </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -343,7 +430,7 @@ export default function VideoToGifPage() {
                 />
                 {status === "converting" && (
                   <button
-                    onClick={() => cancelConversion()}
+                    onClick={() => (fastMode ? cancelFastGif() : cancelConversion())}
                     className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-5 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     <X className="h-4 w-4" />
@@ -361,20 +448,14 @@ export default function VideoToGifPage() {
           <div className="rounded-2xl border border-blue-100 bg-blue-50 p-6 space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-blue-800">
               <Loader2 className="h-4 w-4 animate-spin" />
-              {status === "loading"
-                ? "首次使用需加载转换引擎（约 30MB），请稍候…"
-                : phase === "analyzing"
-                  ? "第一阶段：分析视频帧，生成全局调色板…"
-                  : phase === "writing"
-                    ? "正在写入 GIF 文件…"
-                    : `第二阶段：量化编码 ${Math.round(progress * 100)}%`}
+              {phaseText}
             </div>
-            {status === "converting" && phase === "analyzing" && (
+            {status === "converting" && phase === "analyzing" && progress === 0 && (
               <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100">
                 <div className="h-full w-full animate-pulse rounded-full bg-brand-600/40" />
               </div>
             )}
-            {(phase === "encoding" || phase === "writing") && (
+            {progress > 0 && (
               <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100">
                 <div
                   className="h-full rounded-full bg-brand-600 transition-all"
@@ -383,8 +464,8 @@ export default function VideoToGifPage() {
               </div>
             )}
             <p className="text-xs text-blue-600">
-              {status === "converting" && phase === "analyzing"
-                ? "全局调色板需要先统计完整段视频，此阶段无百分比进度，请耐心等待"
+              {!fastMode && status === "converting" && phase === "analyzing"
+                ? "全局调色板需要先统计完整段视频，长视频耗时较长，请耐心等待"
                 : "转换在浏览器本地进行，请勿刷新或关闭页面"}
             </p>
           </div>
@@ -425,6 +506,17 @@ export default function VideoToGifPage() {
               <p>
                 GIF 大小: <strong>{formatFileSize(result.outputSize)}</strong>
               </p>
+              {result.elapsedMs !== undefined && (
+                <p className="text-xs text-green-600">
+                  耗时 {(result.elapsedMs / 1000).toFixed(1)} 秒（
+                  {resultEngine === "fast"
+                    ? "极速模式"
+                    : `兼容模式 · ${
+                        getFfmpegCoreMode() === "multi" ? "多线程" : "单线程"
+                      }`}
+                  ）
+                </p>
+              )}
             </div>
             <button
               onClick={handleDownload}

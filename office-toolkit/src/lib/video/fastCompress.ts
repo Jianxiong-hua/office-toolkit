@@ -1216,7 +1216,7 @@ export async function fastCompressVideo(
  * 必须按 [a,c,e,b,d,f] 解包（与 rotationTransform 一致）——按 [a,b,c,d,e,f]
  * 直接解包会把单位矩阵误判为旋转矩阵，导致输出宽高对调
  */
-function isRotated(matrix: number[] | null): boolean {
+export function isRotated(matrix: number[] | null): boolean {
   if (!matrix || matrix.length < 6) return false;
   const [m0, m1, m2, m3, m4, m5] = matrix.map((x) => x / 65536);
   const [a, c, e, b, d, f] = [m0, m1, m2, m3, m4, m5];
@@ -1227,7 +1227,7 @@ function isRotated(matrix: number[] | null): boolean {
  * 由 MP4 轨道矩阵推导 canvas 变换（把旋转/翻转烘焙进像素，输出为显示方向）。
  * 参考实现：lyonbot/video-to-gif 的 frameGrabber.ts
  */
-function rotationTransform(
+export function rotationTransform(
   matrix: number[],
   trackW: number,
   trackH: number,
