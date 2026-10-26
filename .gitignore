@@ -32,6 +32,7 @@ office-toolkit/tests/legacy/test_video/
 
 # 临时诊断页（仅本地调试用，不入库）
 office-toolkit/src/app/debug-webcodecs/
+office-toolkit/src/app/debug-mount/
 
 # Local env files
 .env*.local

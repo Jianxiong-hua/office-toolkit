@@ -83,6 +83,7 @@
 - `2026-10-17.md`——图片编辑标注增强（测量根因修复/画框填充色/工具栏图标组/图层列表与叠层）、ImageWorkbench 共享组件、PDF 拆分提取合并、滑杆撤销栈与 PowerShell 无 head 等踩坑
 - `2026-10-18.md`——视频工具设计与实现（ffmpeg.wasm 单例两工具复用、palettegen/paletteuse 出 GIF、截取并入压缩、lucide 无 FileVideo、AAC 不能进 WebM、ffmpeg ESM worker 须 webpack 打包）。设计文档：`docs/plans/2026-10-18-video-tools-design.md`
 - `2026-10-25.md`——视频极速压缩闭环：架构重构（mp4box 只解析元数据 + 按 offset 随机读、跳过 mdat）、PCE 音轨解码失败、编解码显式 prefer-hardware、倍速时间轴与拖动卡死、事件驱动送帧、4GB 上限、截取时间钳制；**同日晚**：视频压缩/GIF 提速（core-mt 在 GIF 滤镜链不可用、WebCodecs 极速 GIF 的逐项实测、软解胜硬解、willReadFrequently 负优化、ffmpeg 阶段进度不可得、两遍法回滚）
+- `2026-10-26.md`——WORKERFS 挂载大文件（2GB）、core-mt 全面停用（解码阶段必卡）、压缩码率封顶防膨胀、`-t` 位置 bug（截取范围被倍速放大）、**ProgressEvent.time 是微秒**、faststart 拖慢收尾、体积按同长度对比
 
 ## 视频工具技术要点（2026-10-18）
 - 转换内核 `src/lib/video/ffmpeg.ts`：wasm 核心走 unpkg CDN（`toBlobURL`，约 30MB），不入库；**不要传 `classWorkerURL`**——ESM worker 的相对导入只有 webpack 打包才能解析（blob URL 会断），实测打包为独立 chunk 正常
@@ -103,4 +104,9 @@
 - **WebCodecs GIF 路径：软件解码快于硬件解码**（硬解帧是 GPU 纹理，`drawImage` 到 CPU 位图要回读）：draw 16.5→0.4 ms、read 0.15→7.4 ms，合计省 8.9 ms/帧；且 `willReadFrequently: true` 在此是负优化（read 从 7.5 降到 3.3 ms 靠关掉它）
 - `gifenc` 的 `quantize` 是 GIF 编码绝对瓶颈（约 applyPalette+LZW 的 7 倍）；降采样无收益（成本随颜色分布而非像素数变化），只能复用调色板，16 帧后收益饱和
 - `ffmpeg.writeFile` 会 **transfer** `ArrayBuffer` 所有权，源 buffer 被 detach；同一份数据要写两次时必须重新 `fetchFile`
+- **`ProgressEvent.time` 的单位是微秒**（`time / 1e6` 才是秒）。当秒用会让进度 1 秒内顶到 99%，且分母怎么调都没用——排查进度问题先验证单位
+- **`-t` 必须放在 `-i` 之前**：放在后面是「输出时长」，与 `setpts=PTS/speed` 叠加会让截取范围放大 speed 倍（选 4 秒 + 2x 实际处理 8 秒）
+- **大文件走 WORKERFS（`mount(FFFSType.WORKERFS)`）**：文件不进 wasm 内存，但路径由 `File.name` 决定，需用 `new File([file], "input.<ext>")` 包装对齐 args；**core-mt 与 WORKERFS 组合在多线程下解码必卡死**，挂载必须单线程
+- 压缩类输出要加 `-maxrate`/`-bufsize` 封顶（源码率 × 0.85/0.6/0.4）：CRF 只控质量不控体积，对已压缩片源二次编码极易比原文件还大
+- `-movflags +faststart` 会让 ffmpeg 编码结束后重写整个文件，本地下载场景应去掉（那是为网站边下边播服务的）
 - 视频转 GIF 的文件上限按模式分流：**极速模式 4GB**（按需随机读样本）、**兼容模式 200MB**（整份写进 wasm 内存）；>200MB 时强制极速模式并锁定开关，非 MP4/MOV 直接拒绝

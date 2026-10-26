@@ -27,7 +27,8 @@ import type {
   VideoResolution,
 } from "@/types/video";
 
-const MAX_FILE_SIZE = 200 * 1024 * 1024;
+/** 超过 200MB 的输入走 WORKERFS 挂载（不进 wasm 内存），上限受输出体积约束 */
+const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 
 /** 「视频极速压缩」能接受的输入容器（按扩展名粗筛，编码是否为 H.264 由该工具自行判断） */
 const FAST_INPUT_EXTS = ["mp4", "m4v", "mov"];
@@ -52,15 +53,15 @@ const RESOLUTION_OPTIONS: { value: VideoResolution; label: string }[] = [
 ];
 
 const PRESET_LABELS: Record<VideoEncodePreset, string> = {
-  ultrafast: "极快（体积较大）",
+  ultrafast: "极快（推荐）",
   veryfast: "很快",
-  fast: "快（推荐）",
+  fast: "快",
   medium: "标准",
   slow: "慢（体积更小）",
   veryslow: "极慢（体积最小，耗时很长）",
 };
 
-const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
 type Status = "idle" | "loading" | "converting" | "done" | "error";
 
@@ -74,7 +75,9 @@ export default function VideoCompressPage() {
     resolution: "original",
     format: "mp4",
     speed: 1,
-    preset: "fast",
+    // wasm 版 x264 没有任何汇编优化，fast 在 1080p 上慢到不可用（实测 50 秒片段约 75 分钟），
+    // 默认给 ultrafast；体积由 maxrate 封顶，不会因 preset 变大
+    preset: "ultrafast",
     trimStart: 0,
     trimEnd: null,
   });
@@ -86,6 +89,8 @@ export default function VideoCompressPage() {
   const [error, setError] = useState<string | null>(null);
   /** 当前文件是否可能适用「视频极速压缩」 */
   const [canFast, setCanFast] = useState(false);
+  /** 转换已用时（秒）：ffmpeg 在出第一帧前不给进度，用它证明任务在走 */
+  const [elapsedSec, setElapsedSec] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -100,6 +105,18 @@ export default function VideoCompressPage() {
       if (resultUrl) URL.revokeObjectURL(resultUrl);
     };
   }, [resultUrl]);
+
+  // 转换期间的秒表：引擎加载（loading）不计，真正开始处理才计时
+  useEffect(() => {
+    if (status !== "converting") return;
+    const t0 = performance.now();
+    setElapsedSec(0);
+    const id = setInterval(
+      () => setElapsedSec(Math.floor((performance.now() - t0) / 1000)),
+      500
+    );
+    return () => clearInterval(id);
+  }, [status]);
 
   const handleFile = useCallback(async (f: File) => {
     setError(null);
@@ -145,8 +162,9 @@ export default function VideoCompressPage() {
     setError(null);
     setProgress(0);
     try {
-      // 首次使用先加载 ffmpeg 引擎（约 30MB，走 CDN）
-      await ensureLoaded();
+      // 首次使用先加载 ffmpeg 引擎（约 30MB，走 CDN）。
+      // 必须与 runConversion 里的选择一致（单线程），否则会先加载多线程再重载一遍
+      await ensureLoaded({ multiThread: false });
       setStatus("converting");
       const r = await compressVideo(file, options, setProgress);
       setResult(r);
@@ -171,9 +189,16 @@ export default function VideoCompressPage() {
 
   const getCurrentTime = useCallback(() => videoRef.current?.currentTime ?? 0, []);
 
+  /** 截取过片段时，拿「完整文件」和「片段输出」比较没有意义，按片段时长折算基准 */
+  const trimmed =
+    result?.segmentRatio !== undefined && result.segmentRatio < 0.999;
+  const baselineSize =
+    result && trimmed
+      ? result.originalSize * result.segmentRatio!
+      : (result?.originalSize ?? 0);
   const savedRatio =
-    result && result.originalSize > 0
-      ? Math.max(0, 1 - result.outputSize / result.originalSize) * 100
+    result && baselineSize > 0
+      ? Math.max(0, 1 - result.outputSize / baselineSize) * 100
       : 0;
 
   return (
@@ -194,10 +219,11 @@ export default function VideoCompressPage() {
               }}
               maxFiles={1}
               maxSize={MAX_FILE_SIZE}
+              maxSizeLabel="单文件最大 2GB"
               onFilesAdded={async (files) => {
                 if (files[0]) await handleFile(files[0].file);
               }}
-              label="拖拽视频到此处，或点击选择（MP4 / WebM / MOV / MKV，≤200MB）"
+              label="拖拽视频到此处，或点击选择（MP4 / WebM / MOV / MKV / AVI，≤2GB）"
             />
             <p className="text-xs text-gray-400">
               视频是 MP4(H.264) 且想更快？可试试
@@ -450,7 +476,11 @@ export default function VideoCompressPage() {
               <Loader2 className="h-4 w-4 animate-spin" />
               {status === "loading"
                 ? "首次使用需加载转换引擎（约 30MB），请稍候…"
-                : `转换中 ${Math.round(progress * 100)}%`}
+                : progress >= 0.99
+                  ? `正在收尾（写入文件），已用 ${elapsedSec} 秒…`
+                  : progress > 0
+                    ? `转换中 ${Math.round(progress * 100)}% · 已用 ${elapsedSec} 秒`
+                    : `正在解码并编码，已用 ${elapsedSec} 秒…`}
             </div>
             {status === "converting" && (
               <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100">
@@ -488,14 +518,26 @@ export default function VideoCompressPage() {
               />
             )}
             <div className="text-sm text-green-700 space-y-1">
-              <p>
-                原始大小: <strong>{formatFileSize(result.originalSize)}</strong>
-              </p>
+              {trimmed ? (
+                <>
+                  <p>
+                    原始文件: {formatFileSize(result.originalSize)}（完整）
+                  </p>
+                  <p>
+                    本次片段原始约: <strong>{formatFileSize(baselineSize)}</strong>
+                  </p>
+                </>
+              ) : (
+                <p>
+                  原始大小: <strong>{formatFileSize(result.originalSize)}</strong>
+                </p>
+              )}
               <p>
                 输出大小: <strong>{formatFileSize(result.outputSize)}</strong>
               </p>
               <p>
                 节省空间: <strong>{savedRatio.toFixed(1)}%</strong>
+                {trimmed && <span className="text-xs">（按同长度对比）</span>}
               </p>
               {result.elapsedMs !== undefined && (
                 <p className="text-xs text-green-600">

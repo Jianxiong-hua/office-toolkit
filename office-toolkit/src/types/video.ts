@@ -36,6 +36,8 @@ export interface VideoCompressResult {
   filename: string;
   /** 处理耗时（毫秒，从读取元信息到产出） */
   elapsedMs?: number;
+  /** 本次处理的片段占完整时长的比例（1 或缺失 = 全片）：用于按同长度比较体积 */
+  segmentRatio?: number;
 }
 
 /** GIF 循环方式 */

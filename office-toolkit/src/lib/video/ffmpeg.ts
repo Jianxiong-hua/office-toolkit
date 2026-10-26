@@ -85,9 +85,12 @@ async function loadCore(multiThread: boolean): Promise<FFmpegInstance> {
  * 请求的类型与当前实例不一致时会先终止旧实例再重载——切 core 需要几秒
  * （wasm 已在浏览器缓存里），但两个工具很少在同一次使用中交替。
  *
- * multiThread=false 用于必须走单线程的调用方：多线程 core 在 GIF 这类
- * 「split+palettegen+paletteuse」重滤镜链上会因内存与线程同步开销严重变慢，
- * 实测 750 帧素材单线程 155.7 秒完成，多线程 295 秒仍停在该阶段。
+ * multiThread=false 用于必须走单线程的调用方。**目前所有调用方都传这个**：
+ * core-mt（pthread 版）实测在解码阶段直接卡死——
+ * - GIF：750 帧素材单线程 155.7 秒完成，多线程 295 秒仍停在第一阶段
+ * - 视频压缩：106MB MP4、截取 50 秒，多线程 66 秒仍 0%
+ * - WORKERFS 挂载：单线程解码 1 秒 353ms，多线程无响应（探测阶段却正常）
+ * 单线程是唯一可用路径，core-mt 分支仅保留待将来 core 更新后再验证。
  */
 export function ensureLoaded(
   options?: { multiThread?: boolean }
@@ -150,9 +153,18 @@ export function ensureLoaded(
   return loading;
 }
 
+/** 超过这个大小的输入改用 WORKERFS 挂载（不进 wasm 内存），小文件走内存更快 */
+export const MOUNT_THRESHOLD_BYTES = 200 * 1024 * 1024;
+
+/** WORKERFS 挂载点 */
+const MOUNT_POINT = "/mnt";
+
 export interface RunConversionOptions {
   inputName: string;
-  inputData: Uint8Array;
+  /** 小文件：内容写入 MEMFS（与 inputFile 二选一） */
+  inputData?: Uint8Array;
+  /** 大文件：WORKERFS 挂载原始 File，ffmpeg 按需 Blob 读取（与 inputData 二选一） */
+  inputFile?: File;
   args: string[];
   outputName: string;
   /**
@@ -161,6 +173,14 @@ export interface RunConversionOptions {
    * 多线程 295 秒仍停在同一阶段）
    */
   forceSingleThread?: boolean;
+  /** 打印前若干条 ffmpeg stderr 日志（排查「卡住」时判断是读取、解码还是编码） */
+  debugLog?: boolean;
+  /**
+   * 预期输出时长（秒）。ffmpeg 的 progress 用「已输出时间戳 / 它自己估的总时长」，
+   * 一旦命令里带 setpts 变速或 -t 截取，分母就会错（实测 50 秒输入 + 2 倍速时
+   * 进度只走到 18% 就结束）。传这个值后改用 time / 预期时长 自行折算
+   */
+  expectedDurationSec?: number;
   /**
    * 进度回调：ratio 0~1，phase 见 VideoConvertPhase。
    * ffmpeg 的进度按输出时间戳计算，某些滤镜（如 GIF 的 palettegen）
@@ -173,8 +193,13 @@ export interface RunConversionOptions {
 export async function runConversion(
   opts: RunConversionOptions
 ): Promise<Uint8Array> {
+  /** 是否走 WORKERFS 挂载（大文件不解进 wasm 内存） */
+  const useMount = !!opts.inputFile;
   const ffmpeg = await ensureLoaded({
-    multiThread: !opts.forceSingleThread,
+    // WORKERFS 与 core-mt 的 pthread 环境不兼容：同一文件单线程解码 1 秒 353ms 完成，
+    // 多线程在解码阶段直接卡死无响应（探测阶段正常，所以只看索引发现不了）。
+    // 因此挂载路径必须单线程
+    multiThread: useMount ? false : !opts.forceSingleThread,
   });
 
   let cancelled = false;
@@ -186,18 +211,72 @@ export async function runConversion(
     };
   });
 
-  const progressHandler = ({ progress }: { progress: number }) => {
-    const ratio = Math.min(1, Math.max(0, progress));
+  const progressHandler = ({
+    progress,
+    time,
+  }: {
+    progress: number;
+    time: number;
+  }) => {
+    // time 的单位是**微秒**（ffmpeg.wasm 的 ProgressEvent.time），必须先换算成秒
+    // 有预期输出时长时自己折算（ffmpeg 自估的分母在变速/截取下不可信）
+    const expected = opts.expectedDurationSec ?? 0;
+    const raw = expected > 0 ? time / 1e6 / expected : progress;
+    // 封顶 0.99：时间轴走完之后编码器 flush、写文件、读回文件都还要时间，
+    // 提前显示 100% 会让用户以为卡住了。真正完成由 exec 之后的 writing 阶段报 1
+    const ratio = Math.min(0.99, Math.max(0, raw));
     if (ratio > 0) sawOutput = true;
     // 尚无输出帧 → analyzing（如 palettegen 统计期）；有输出帧 → encoding
     opts.onProgress?.(ratio, sawOutput ? "encoding" : "analyzing");
   };
   ffmpeg.on("progress", progressHandler);
 
+  /** 诊断用：只打印前若干条 stderr，能看出卡在读取还是编码，且不会刷屏 */
+  const LOG_SAMPLES = 20;
+  let logSamples = 0;
+  const logHandler = ({ type, message }: { type: string; message: string }) => {
+    if (!opts.debugLog || type === "stdout" || logSamples >= LOG_SAMPLES) return;
+    logSamples++;
+    console.info(`[ffmpeg][log] ${message.slice(0, 200)}`);
+  };
+  if (opts.debugLog) ffmpeg.on("log", logHandler);
+
   try {
-    await ffmpeg.writeFile(opts.inputName, opts.inputData);
+    let args = opts.args;
+    if (useMount) {
+      const { FFFSType } = await import("@ffmpeg/ffmpeg");
+      // 挂载后的路径由 File.name 决定，用同名包装使路径与 args 里写的一致。
+      // File 构造器接受 Blob 作为 part，这里只新建元数据、不复制文件内容
+      const wrapped = new File([opts.inputFile!], opts.inputName, {
+        type: opts.inputFile!.type,
+      });
+      try {
+        await ffmpeg.createDir(MOUNT_POINT);
+      } catch {
+        /* 目录已存在（上次异常退出残留），继续挂载即可 */
+      }
+      const mounted = await ffmpeg.mount(
+        FFFSType.WORKERFS,
+        { files: [wrapped] },
+        MOUNT_POINT
+      );
+      if (!mounted) {
+        throw new AppError(
+          "BROWSER_NOT_SUPPORTED",
+          "当前环境无法挂载大文件",
+          "WORKERFS mount 失败"
+        );
+      }
+      const mountedPath = `${MOUNT_POINT}/${opts.inputName}`;
+      args = args.map((a) => (a === opts.inputName ? mountedPath : a));
+    } else {
+      if (!opts.inputData) {
+        throw new AppError("INVALID_INPUT", "缺少输入数据");
+      }
+      await ffmpeg.writeFile(opts.inputName, opts.inputData);
+    }
     const code = await Promise.race([
-      ffmpeg.exec(opts.args, EXEC_TIMEOUT_MS),
+      ffmpeg.exec(args, EXEC_TIMEOUT_MS),
       cancelPromise,
     ]);
     if (code !== 0) {
@@ -213,12 +292,20 @@ export async function runConversion(
   } finally {
     cancelReject = null;
     ffmpeg.off("progress", progressHandler);
+    if (opts.debugLog) ffmpeg.off("log", logHandler);
     if (!cancelled) {
       // 取消路径下 worker 已终止，MEMFS 随之释放，无需（也无法）清理
-      await Promise.allSettled([
-        ffmpeg.deleteFile(opts.inputName),
-        ffmpeg.deleteFile(opts.outputName),
-      ]);
+      if (useMount) {
+        await Promise.allSettled([
+          ffmpeg.unmount(MOUNT_POINT).then(() => ffmpeg.deleteDir(MOUNT_POINT)),
+          ffmpeg.deleteFile(opts.outputName),
+        ]);
+      } else {
+        await Promise.allSettled([
+          ffmpeg.deleteFile(opts.inputName),
+          ffmpeg.deleteFile(opts.outputName),
+        ]);
+      }
     }
   }
 }

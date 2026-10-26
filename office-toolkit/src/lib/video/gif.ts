@@ -5,7 +5,7 @@ import type {
   VideoGifResult,
 } from "@/types/video";
 import { generateOutputFilename } from "@/lib/file";
-import { ffmpegInputName, runConversion } from "./ffmpeg";
+import { ffmpegInputName, MOUNT_THRESHOLD_BYTES, runConversion } from "./ffmpeg";
 import { readVideoMeta } from "./probe";
 
 const OUTPUT_NAME = "output.gif";
@@ -41,8 +41,11 @@ export async function videoToGif(
     `split[s0][s1];[s0]palettegen=max_colors=${options.maxColors}:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer`
   );
 
-  const args: string[] = ["-ss", String(start), "-i", inputName];
+  // -ss 与 -t 都必须放在 -i 之前（输入选项）：放在 -i 之后是「输出时长」，
+  // 而滤镜链里的 setpts=PTS/speed 会压缩时间轴，截取范围会被放大 speed 倍
+  const args: string[] = ["-ss", String(start)];
   if (end !== null) args.push("-t", String(end - start));
+  args.push("-i", inputName);
   args.push(
     "-vf",
     filters.join(","),
@@ -56,11 +59,17 @@ export async function videoToGif(
 
   const data = await runConversion({
     inputName,
-    inputData: await fetchFile(file),
+    // >200MB 走 WORKERFS 挂载，整个文件不进 wasm 内存
+    ...(file.size > MOUNT_THRESHOLD_BYTES
+      ? { inputFile: file }
+      : { inputData: await fetchFile(file) }),
     args,
     outputName: OUTPUT_NAME,
     // 这条滤镜链必须单线程：多线程 core 在 palettegen/paletteuse 上会严重变慢
     forceSingleThread: true,
+    // 分母是输出时长（变速后 = 片段时长 / 倍速），与 progress 的 out_time 同轴
+    expectedDurationSec:
+      duration > 0 ? duration / options.speed : undefined,
     onProgress,
   });
 
