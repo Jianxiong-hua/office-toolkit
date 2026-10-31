@@ -84,6 +84,7 @@
 - `2026-10-18.md`——视频工具设计与实现（ffmpeg.wasm 单例两工具复用、palettegen/paletteuse 出 GIF、截取并入压缩、lucide 无 FileVideo、AAC 不能进 WebM、ffmpeg ESM worker 须 webpack 打包）。设计文档：`docs/plans/2026-10-18-video-tools-design.md`
 - `2026-10-25.md`——视频极速压缩闭环：架构重构（mp4box 只解析元数据 + 按 offset 随机读、跳过 mdat）、PCE 音轨解码失败、编解码显式 prefer-hardware、倍速时间轴与拖动卡死、事件驱动送帧、4GB 上限、截取时间钳制；**同日晚**：视频压缩/GIF 提速（core-mt 在 GIF 滤镜链不可用、WebCodecs 极速 GIF 的逐项实测、软解胜硬解、willReadFrequently 负优化、ffmpeg 阶段进度不可得、两遍法回滚）
 - `2026-10-26.md`——WORKERFS 挂载大文件（2GB）、core-mt 全面停用（解码阶段必卡）、压缩码率封顶防膨胀、`-t` 位置 bug（截取范围被倍速放大）、**ProgressEvent.time 是微秒**、faststart 拖慢收尾、体积按同长度对比
+- `2026-10-31.md`——新增「视频提取图片」+「图片合成视频」（含决策清单、提取速度模型 max(出口 130ms, 解码帧数×2.9ms)、兼容模式 200MB 硬上限、FFmpeg 5.1 core、avc3/HEVC 识别、合成画质四档与体积估算偏差、worker 字符串 reject 需 catch-all）
 
 ## 视频工具技术要点（2026-10-18）
 - 转换内核 `src/lib/video/ffmpeg.ts`：wasm 核心走 unpkg CDN（`toBlobURL`，约 30MB），不入库；**不要传 `classWorkerURL`**——ESM worker 的相对导入只有 webpack 打包才能解析（blob URL 会断），实测打包为独立 chunk 正常
@@ -110,3 +111,14 @@
 - 压缩类输出要加 `-maxrate`/`-bufsize` 封顶（源码率 × 0.85/0.6/0.4）：CRF 只控质量不控体积，对已压缩片源二次编码极易比原文件还大
 - `-movflags +faststart` 会让 ffmpeg 编码结束后重写整个文件，本地下载场景应去掉（那是为网站边下边播服务的）
 - 视频转 GIF 的文件上限按模式分流：**极速模式 4GB**（按需随机读样本）、**兼容模式 200MB**（整份写进 wasm 内存）；>200MB 时强制极速模式并锁定开关，非 MP4/MOV 直接拒绝
+
+### 视频提取图片 / 图片合成视频（2026-10-31，版本 1.12.0）
+- **提取速度模型**：`单张 ≈ max(出口侧 ~130 ms, 需解码帧数 × 2.9 ms)`（1080p）；出口侧 = 写盘 ~95 + PNG 编码 ~33。**耗时由片段时长决定，增大「每隔 N 帧」只省磁盘不省时间**
+- **兼容模式（ffmpeg）只接 ≤200MB**：实测 2.13GB/3635 秒 MKV 逐帧解码几十分钟且必撞 30 分钟 exec 超时；本机 wasm core 是 **FFmpeg 5.1**，`-fps_mode` 不可用，用 `-vsync 0`
+- **`.mp4` ≠ H.264**：`hev1`（HEVC）必须拒绝且要说明原因；H.264 有 `avc1` 与 `avc3` 两种 sample entry，`avc3` 参数集在码流里、不能传 decoder description
+- **worker 错误是 `reject(字符串)`**：`@ffmpeg/ffmpeg` 出错时 reject 的不是 Error，`e.message` 为空 → 必须 catch-all 转 AppError 并附 stderr 尾部，否则界面只剩兜底文案
+- **`fs.on("progress")` + `time/clipDurationSec`** 是兼容模式 exec 期间唯一的进度来源（time 单位微秒）
+- **File System Access 只给目录名**，无绝对路径；子目录懒创建（首次写盘），快路径失败回退时不留空目录
+- **合成码率 = bpp × w × h × fps**，四档 0.25/0.12/0.06/0.03，上限 80 Mbps（4K 极高档需 62 Mbps）。静态画面给低码率会糊——「帧间差异小」不等于「可以低码率」
+- **合成体积偏差**：每张 1 帧时每帧都是场景切换、几乎全出 I 帧，实际体积比「目标码率×时长」高约 18% → 界面给「下限 ~ ×1.4」区间
+- **`FileSystemWritableFileStreamTarget` 要 `fastStart: false`** 才能顺序写盘；可写流由页面 close/abort，库层不关

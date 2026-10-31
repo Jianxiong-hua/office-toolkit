@@ -173,6 +173,26 @@ export const tools: ToolMeta[] = [
     icon: "Zap",
     tags: ["压缩", "视频", "极速", "WebCodecs", "MP4"],
   },
+  {
+    id: "video-extract-frames",
+    name: "视频提取图片",
+    description:
+      "按起止时间与帧间隔把视频拆成图片序列，可直接写入指定文件夹或打包 ZIP，本地处理不上传",
+    category: "video",
+    path: "/tools/video/frames/",
+    icon: "Images",
+    tags: ["提取", "视频转图片", "帧", "图片序列"],
+  },
+  {
+    id: "video-from-images",
+    name: "图片合成视频",
+    description:
+      "把一批图片按顺序合成 MP4 视频，支持每张停留时长或每张一帧，本地编码不上传",
+    category: "video",
+    path: "/tools/video/from-images/",
+    icon: "Clapperboard",
+    tags: ["合成", "图片转视频", "幻灯片", "MP4"],
+  },
 ];
 
 export const toolsByCategory = {

@@ -64,8 +64,8 @@ const RESOLUTION_HEIGHT: Record<VideoResolution, number | null> = {
   "480p": 480,
 };
 
-/** 按输出高度选 H.264 profile/level */
-function pickAvcCodec(outHeight: number): string {
+/** 按输出高度选 H.264 profile/level（图片合成视频复用同一套选型） */
+export function pickAvcCodec(outHeight: number): string {
   if (outHeight <= 576) return "avc1.42001f"; // Baseline 3.0，兼容性最好
   if (outHeight <= 1080) return "avc1.640028"; // High 4.0
   return "avc1.640033"; // High 5.1

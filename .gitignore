@@ -29,6 +29,7 @@ yarn-error.log*
 
 # 本地视频测试素材（GB 级原始文件，不入库）
 office-toolkit/tests/legacy/test_video/
+office-toolkit/tests/test_video/
 
 # 临时诊断页（仅本地调试用，不入库）
 office-toolkit/src/app/debug-webcodecs/
