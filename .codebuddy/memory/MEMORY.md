@@ -85,6 +85,7 @@
 - `2026-10-25.md`——视频极速压缩闭环：架构重构（mp4box 只解析元数据 + 按 offset 随机读、跳过 mdat）、PCE 音轨解码失败、编解码显式 prefer-hardware、倍速时间轴与拖动卡死、事件驱动送帧、4GB 上限、截取时间钳制；**同日晚**：视频压缩/GIF 提速（core-mt 在 GIF 滤镜链不可用、WebCodecs 极速 GIF 的逐项实测、软解胜硬解、willReadFrequently 负优化、ffmpeg 阶段进度不可得、两遍法回滚）
 - `2026-10-26.md`——WORKERFS 挂载大文件（2GB）、core-mt 全面停用（解码阶段必卡）、压缩码率封顶防膨胀、`-t` 位置 bug（截取范围被倍速放大）、**ProgressEvent.time 是微秒**、faststart 拖慢收尾、体积按同长度对比
 - `2026-10-31.md`——新增「视频提取图片」+「图片合成视频」（含决策清单、提取速度模型 max(出口 130ms, 解码帧数×2.9ms)、兼容模式 200MB 硬上限、FFmpeg 5.1 core、avc3/HEVC 识别、合成画质四档与体积估算偏差、worker 字符串 reject 需 catch-all）
+- `2026-11-07.md`——视频极速压缩取消 4GB 硬上限（只留慢速提示）、五处对外文案去 4GB 化；用户文案偏好「不要强调不设上限」「提示要短、别解释技术因果」；`maxSize={Infinity}` 必须配 `maxSizeLabel` 否则显示 `InfinityMB`
 
 ## 视频工具技术要点（2026-10-18）
 - 转换内核 `src/lib/video/ffmpeg.ts`：wasm 核心走 unpkg CDN（`toBlobURL`，约 30MB），不入库；**不要传 `classWorkerURL`**——ESM worker 的相对导入只有 webpack 打包才能解析（blob URL 会断），实测打包为独立 chunk 正常

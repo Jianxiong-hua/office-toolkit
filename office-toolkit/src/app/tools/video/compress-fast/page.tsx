@@ -21,8 +21,12 @@ import type {
   VideoResolution,
 } from "@/types/video";
 
-/** 上限 4GB：WebCodecs 流式解码不占整文件内存，瓶颈在输出体积与机器内存 */
-const MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024;
+/**
+ * 不再设硬上限：WebCodecs 按样本随机读文件、不把整份载入内存，
+ * 文件大小本身不是门槛。但解码/编码按帧走，耗时与文件近似线性，
+ * 超过这个体积给个「会很慢」的提示即可。
+ */
+const SLOW_WARN_FILE_SIZE = 4 * 1024 * 1024 * 1024;
 
 const QUALITY_LABELS: Record<FastQualityPreset, string> = {
   high: "高质量",
@@ -204,7 +208,7 @@ export default function VideoFastCompressPage() {
   return (
     <ToolLayout
       title="视频极速压缩"
-      description="基于 WebCodecs 硬件加速的极速压缩，支持最大 4GB 的 MP4(H.264) 视频，所有处理在浏览器本地完成"
+      description="基于 WebCodecs 硬件加速的极速压缩，支持 MP4(H.264) 视频，所有处理在浏览器本地完成"
     >
       <div className="space-y-6">
         {/* 浏览器能力提示 */}
@@ -226,11 +230,12 @@ export default function VideoFastCompressPage() {
                 "video/quicktime": [".mov"],
               }}
               maxFiles={1}
-              maxSize={MAX_FILE_SIZE}
+              maxSize={Number.POSITIVE_INFINITY}
+              maxSizeLabel="文件越大处理越慢"
               onFilesAdded={async (files) => {
                 if (files[0]) await handleFile(files[0].file);
               }}
-              label="拖拽 MP4 视频到此处，或点击选择（≤4GB）"
+              label="拖拽 MP4 视频到此处，或点击选择"
             />
             <p className="text-xs text-gray-400">
               仅支持 MP4/MOV 容器 + H.264 编码（覆盖绝大多数手机/相机/录屏视频）。
@@ -284,11 +289,17 @@ export default function VideoFastCompressPage() {
                   硬件加速
                 </span>
               </div>
-              {file.size > 500 * 1024 * 1024 && (
+              {file.size > SLOW_WARN_FILE_SIZE ? (
                 <p className="text-xs text-amber-600">
-                  文件较大（&gt;500MB），转换耗时与内存占用都会明显增加，建议使用桌面端
-                  Chrome/Edge，并保持页面前台可见。
+                  {`文件 ${formatFileSize(file.size)}：文件较大，处理时间较长，请耐心等待。建议使用Chrome/Edge浏览器，处理期间请勿关闭或刷新页面。`}
                 </p>
+              ) : (
+                file.size > 500 * 1024 * 1024 && (
+                  <p className="text-xs text-amber-600">
+                    文件较大（&gt;500MB），转换耗时与内存占用都会明显增加，建议使用桌面端
+                    Chrome/Edge，并保持页面前台可见。
+                  </p>
+                )
               )}
             </div>
 

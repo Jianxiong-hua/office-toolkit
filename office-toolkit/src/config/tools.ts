@@ -167,7 +167,7 @@ export const tools: ToolMeta[] = [
     id: "video-compress-fast",
     name: "视频极速压缩",
     description:
-      "基于 WebCodecs 硬件加速的极速压缩，支持最大 4GB 的 MP4(H.264) 视频，本地转换不上传",
+      "基于 WebCodecs 硬件加速的极速压缩，支持 MP4(H.264) 视频，本地转换不上传",
     category: "video",
     path: "/tools/video/compress-fast/",
     icon: "Zap",

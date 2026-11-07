@@ -16,6 +16,15 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    version: "1.12.1",
+    date: "2026-11",
+    title: "视频极速压缩：取消 4GB 大小上限",
+    changes: [
+      "「视频极速压缩」取消 4GB 文件大小上限，超大文件也可正常处理；文件较大时提示处理时间较长，请耐心等待",
+      "同步更新页面与工具描述，移除过时的「最大 4GB」说明",
+    ],
+  },
+  {
     version: "1.12.0",
     date: "2026-10",
     title: "新增「视频提取图片」与「图片合成视频」",

@@ -233,7 +233,7 @@ export default function VideoCompressPage() {
               >
                 视频极速压缩
               </Link>
-              （硬件加速，支持 4GB，但仅支持 MP4/H.264 输入与 MP4 输出）
+              （硬件加速，但仅支持 MP4/H.264 输入与 MP4 输出）
             </p>
           </>
         )}
