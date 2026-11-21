@@ -1,8 +1,8 @@
 {
-  "name": "sky-box-office-toolkit",
+  "name": "haoxia-office-toolkit",
   "version": "1.12.1",
   "private": true,
-  "description": "小蓝盒 (Sky-Box Office Toolkit) - 纯前端 PDF & 图片处理工具站",
+  "description": "浩匣 (HaoXia Office Toolkit) - 纯前端 PDF & 图片处理工具站",
   "scripts": {
     "predev": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch(e){}\"",
     "dev": "next dev",

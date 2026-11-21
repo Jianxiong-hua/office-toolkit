@@ -1,0 +1,12 @@
+[general]
+host = "127.0.0.1"
+port = 8788
+root = "www"
+directory-listing = false
+page404 = "404.html"
+
+[advanced]
+
+[[advanced.headers]]
+source = "**/*"
+headers = { Cross-Origin-Opener-Policy = "same-origin", Cross-Origin-Embedder-Policy = "require-corp" }

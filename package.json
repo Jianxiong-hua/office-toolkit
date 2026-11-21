@@ -4,6 +4,7 @@
   "description": "Root workspace for office-toolkit (Next.js app lives in ./office-toolkit)",
   "scripts": {
     "validate": "cd office-toolkit && npm run validate",
+    "pack:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-portable.ps1",
     "prepare": "husky"
   },
   "devDependencies": {

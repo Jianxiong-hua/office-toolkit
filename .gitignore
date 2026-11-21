@@ -14,6 +14,9 @@ out/
 build/
 dist/
 
+# 便携发行包（含第三方 exe 与 zip，不入库）
+release/
+
 # Misc
 .DS_Store
 *.pem
