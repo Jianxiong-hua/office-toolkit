@@ -1,6 +1,6 @@
 {
   "name": "haoxia-office-toolkit",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "private": true,
   "description": "浩匣 (HaoXia Office Toolkit) - 纯前端 PDF & 图片处理工具站",
   "scripts": {

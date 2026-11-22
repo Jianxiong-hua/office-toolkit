@@ -34,6 +34,9 @@ yarn-error.log*
 office-toolkit/tests/legacy/test_video/
 office-toolkit/tests/test_video/
 
+# 本地 raw 测试素材（传感器原始 dump，不入库）
+office-toolkit/tests/test_raw/
+
 # 临时诊断页（仅本地调试用，不入库）
 office-toolkit/src/app/debug-webcodecs/
 office-toolkit/src/app/debug-mount/

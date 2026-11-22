@@ -97,6 +97,16 @@ export const tools: ToolMeta[] = [
     icon: "Calculator",
     tags: ["进制转换", "HEX", "浮点", "IEEE754", "字节序"],
   },
+  {
+    id: "design-raw-viewer",
+    name: "RAW 图查看",
+    description:
+      "查看裸像素 Bayer RAW 数据：单张或批量转换，按线性 / gamma / sRGB 映射到 8 位后 Malvar-He-Cutler 去马赛克并导出 PNG",
+    category: "design",
+    path: "/tools/design/raw-viewer/",
+    icon: "Aperture",
+    tags: ["RAW", "Bayer", "去马赛克", "ISP", "PNG"],
+  },
 
   // --- PDF 工具 ---
   {

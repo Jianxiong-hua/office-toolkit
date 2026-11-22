@@ -56,7 +56,8 @@
 - 批量工具统一模式：`FileDropZone` 多文件 → `FileList`（展示 results / 单张下载预览 / 删除）→ `jszip` 动态 `import("jszip")` 打包下载。
 - 文件名用 `generateOutputFilename(原文件名, 后缀, 新扩展名)`；下载用 `downloadBlob`（file-saver）。
 - 错误分两类展示：处理失败用 `ErrorAlert`（带重试）；输入/校验类提示用琥珀色内联横幅。
-- 纯函数逻辑放 `src/lib/{image,pdf,color}/*.ts`，页面只做状态与 UI。
+- 纯函数逻辑放 `src/lib/{image,pdf,color,convert}/*.ts`，页面只做状态与 UI。
+- **GitHub Release 约定（2026-11-22 确认）**：正文只放 `**Full Changelog**: <releases 链接>` 一行（不要功能清单，用户选过 A 而非 B）；标题「浩匣 vX.Y.Z」；附件名用 ASCII `HaoXia-Portable-vX.Y.Z.zip`（中文名在下载时易被转义）；`gh release create` 的 `--target` 必须给分支名 `main`，**短 SHA 会被 GitHub 判 `target_commitish is invalid`（HTTP 422）**；上传前先把中文 zip 复制成 ASCII 文件名，避免「有 Release 没附件」的残局。
 
 ## 技术要点
 - **react-easy-crop**：`onCropComplete` 给的 `croppedAreaPixels` 是**旋转后外接矩形**（`rotateSize(naturalW, naturalH, rotation)`）坐标系的像素，不是原图坐标系。任意角度旋转必须先「镜像→旋转」绘制到外接矩形 canvas，再按 crop 区域取像素；输出尺寸恒等于 crop.width × crop.height。
@@ -89,7 +90,7 @@
 - `2026-10-26.md`——WORKERFS 挂载大文件（2GB）、core-mt 全面停用（解码阶段必卡）、压缩码率封顶防膨胀、`-t` 位置 bug（截取范围被倍速放大）、**ProgressEvent.time 是微秒**、faststart 拖慢收尾、体积按同长度对比
 - `2026-10-31.md`——新增「视频提取图片」+「图片合成视频」（含决策清单、提取速度模型 max(出口 130ms, 解码帧数×2.9ms)、兼容模式 200MB 硬上限、FFmpeg 5.1 core、avc3/HEVC 识别、合成画质四档与体积估算偏差、worker 字符串 reject 需 catch-all）
 - `2026-11-07.md`——视频极速压缩取消 4GB 硬上限（只留慢速提示）、五处对外文案去 4GB 化；用户文案偏好「不要强调不设上限」「提示要短、别解释技术因果」；`maxSize={Infinity}` 必须配 `maxSizeLabel` 否则显示 `InfinityMB`
-- `2026-11-22.md`——新增「进制与浮点转换」工具（位模式统一 BigInt、IEEE754 分解、位视图翻转/移位、字节序按钮按输入使能与默认大端）；设计与 11 条实现期决策见 `office-toolkit/docs/hex-convert-design.md`
+- `2026-11-22.md`——新增「进制与浮点转换」工具（位模式统一 BigInt、IEEE754 分解、位视图翻转/移位、字节序按钮按输入使能与默认大端）；新增「RAW 图查看」工具（裸像素 Bayer 解析、MH-C 去马赛克、DN 域插值后量化、预览缩放、批量内存 ZIP / 超阈值选目录）；设计文档 `office-toolkit/docs/hex-convert-design.md`、`raw-viewer-design.md`
 - `2026-11-21.md`——便携版打包工具链：`npm run pack:portable`（static-web-server 单 exe + sws.toml + COOP/COEP）、按版本号命名发行目录、剔除调试页、随包附第三方 LICENSE；husky 首次真正启用 + post-commit 自动打包；修正包名品牌残留；out 静态导出不能 file:// 双击打开；gh 认证走 `GH_TOKEN` 环境变量
 
 ## 视频工具技术要点（2026-10-18）

@@ -16,6 +16,19 @@ interface ChangelogEntry {
 
 const changelog: ChangelogEntry[] = [
   {
+    version: "1.14.0",
+    date: "2026-11",
+    title: "新增「RAW 图查看」工具",
+    changes: [
+      "新增「RAW 图查看」：读取裸像素 Bayer RAW，按线性 / gamma 2.2 / sRGB 映射到 8 位后用 Malvar-He-Cutler 去马赛克，导出 PNG",
+      "支持 8 / 10 / 12 / 14 / 16 bit 未打包位深，可选大端小端；10 / 12 / 14 bit 可指定低位或高位对齐",
+      "支持 RGGB / BGGR / GRBG / GBRG 四种排列；参数填错时给出字节数校验与差值提示",
+      "预览支持缩放（按钮调节、适应窗口、1:1）与拖动平移，点列表项即预览该张",
+      "支持批量：50 张以内且成品不超过 200 MB 时在浏览器内存中打包为一个 ZIP 下载；超过阈值时需先选择输出目录（Chrome / Edge）逐张写入",
+      "批量转换显示逐张进度与已用时间，可随时取消；失败的文件跳过并列出原因",
+    ],
+  },
+  {
     version: "1.13.0",
     date: "2026-11",
     title: "新增「进制与浮点转换」工具",
