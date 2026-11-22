@@ -75,6 +75,7 @@
 - **dev 重启前跑过 build 会卡死 dev 启动**：.next 的 build 产物文件数超过 IDE node safe-delete 钩子的批量阈值（500），predev 的 rmSync 被拦而抛错，端口不监听。先手动 Remove-Item .next 再启动。
 - **execute_command 写源码时转义序列会变形**：参数中的 `\r\n` 等经链路变成双反斜杠字面。TS 源码里的转义用 String.fromCharCode 拼接；纯函数断言脚本放 .git/ 下临时目录跑。
 - **PowerShell 5.1 按 GBK 读没有 BOM 的 UTF-8 `.ps1`**：中文注释/字符串全乱并抛 `Unexpected token`。任何含中文的 PowerShell 脚本必须存成 **UTF-8 with BOM**；用编辑工具改完后要复查 BOM 是否还在。
+- **BigInt 字面量（`0xFFn`）要求 tsconfig `target` ≥ ES2020**（2026-11-22 已从 ES2017 改为 ES2020）：低版本报 TS2737 「BigInt literals are not available when targeting lower than ES2020」。`target` 只影响 `tsc` 检查，产物仍由 Next/SWC 按浏览器目标编译
 - **Next 静态导出（`output: "export"`）的 `out/` 不能双击 index.html 打开**：资源是 `/_next/...` 绝对路径（file:// 下解析到盘符根），客户端路由靠 `fetch('*.txt')` 拉 RSC payload，PDF.js/ffmpeg 的 Worker 在 file:// 下被浏览器拦。改相对路径也救不回来，只能起本地 HTTP 服务。
 
 ## 工作日志
@@ -88,6 +89,7 @@
 - `2026-10-26.md`——WORKERFS 挂载大文件（2GB）、core-mt 全面停用（解码阶段必卡）、压缩码率封顶防膨胀、`-t` 位置 bug（截取范围被倍速放大）、**ProgressEvent.time 是微秒**、faststart 拖慢收尾、体积按同长度对比
 - `2026-10-31.md`——新增「视频提取图片」+「图片合成视频」（含决策清单、提取速度模型 max(出口 130ms, 解码帧数×2.9ms)、兼容模式 200MB 硬上限、FFmpeg 5.1 core、avc3/HEVC 识别、合成画质四档与体积估算偏差、worker 字符串 reject 需 catch-all）
 - `2026-11-07.md`——视频极速压缩取消 4GB 硬上限（只留慢速提示）、五处对外文案去 4GB 化；用户文案偏好「不要强调不设上限」「提示要短、别解释技术因果」；`maxSize={Infinity}` 必须配 `maxSizeLabel` 否则显示 `InfinityMB`
+- `2026-11-22.md`——新增「进制与浮点转换」工具（位模式统一 BigInt、IEEE754 分解、位视图翻转/移位、字节序按钮按输入使能与默认大端）；设计与 11 条实现期决策见 `office-toolkit/docs/hex-convert-design.md`
 - `2026-11-21.md`——便携版打包工具链：`npm run pack:portable`（static-web-server 单 exe + sws.toml + COOP/COEP）、按版本号命名发行目录、剔除调试页、随包附第三方 LICENSE；husky 首次真正启用 + post-commit 自动打包；修正包名品牌残留；out 静态导出不能 file:// 双击打开；gh 认证走 `GH_TOKEN` 环境变量
 
 ## 视频工具技术要点（2026-10-18）

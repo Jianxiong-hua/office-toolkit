@@ -88,6 +88,15 @@ export const tools: ToolMeta[] = [
     icon: "Contrast",
     tags: ["对比度", "WCAG", "可访问性", "颜色", "色觉模拟"],
   },
+  {
+    id: "design-hex-convert",
+    name: "进制与浮点转换",
+    description: "十六进制、十进制、八进制、二进制与 IEEE 754 浮点互转，支持逐位翻转与字节序切换",
+    category: "design",
+    path: "/tools/design/hex-convert/",
+    icon: "Calculator",
+    tags: ["进制转换", "HEX", "浮点", "IEEE754", "字节序"],
+  },
 
   // --- PDF 工具 ---
   {
